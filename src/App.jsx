@@ -974,9 +974,28 @@ function VisitForm({ visit, factories, currentUser, onSave, onCancel }) {
   );
 }
 
+function useReverseGeocode(lat, lon, existingAddress) {
+  const [address, setAddress] = useState(existingAddress || "");
+  useEffect(() => {
+    if (!lat || !lon) return;
+    const looksLikeCoords = !existingAddress || /^-?\d+\.\d+,\s*-?\d+\.\d+$/.test(existingAddress.trim());
+    if (!looksLikeCoords) { setAddress(existingAddress); return; }
+    fetch(`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lon}&format=json&addressdetails=1`, { headers: { "Accept-Language": "en" } })
+      .then(r => r.json())
+      .then(data => {
+        const addr = data.address || {};
+        const readable = [addr.road || addr.pedestrian || addr.street, addr.suburb || addr.neighbourhood, addr.city || addr.town || addr.village, addr.country].filter(Boolean).join(", ");
+        setAddress(readable || data.display_name || existingAddress);
+      })
+      .catch(() => setAddress(existingAddress));
+  }, [lat, lon, existingAddress]);
+  return address;
+}
+
 function VisitDetailPage({ visitId, visits, setVisits, factories, onBack, currentUser, showToast, askConfirm }) {
   const [showEdit, setShowEdit] = useState(false);
   const visit = visits.find((v) => v.id === visitId);
+  const resolvedAddress = useReverseGeocode(visit?.latitude, visit?.longitude, visit?.location_address);
   if (!visit) return null;
 
   const canEdit = visit.visitor_name === currentUser?.full_name || currentUser?.role === "admin";
@@ -1009,7 +1028,7 @@ function VisitDetailPage({ visitId, visits, setVisits, factories, onBack, curren
               <h1 className="text-2xl font-bold mt-1">{visit.item}</h1>
               <div className="flex items-center gap-4 mt-2 text-sm text-slate-300 flex-wrap">
                 <div className="flex items-center gap-2">{Icon.calendar} {fmtDate(visit.visit_date, true)}</div>
-                {visit.location_address && <div className="flex items-start gap-2">{Icon.pin} <span>{visit.location_address}</span></div>}
+                {resolvedAddress && <div className="flex items-start gap-2">{Icon.pin} <span>{resolvedAddress}</span></div>}
               </div>
             </div>
             <div className="flex gap-2 flex-wrap flex-shrink-0">
@@ -1051,7 +1070,7 @@ function VisitDetailPage({ visitId, visits, setVisits, factories, onBack, curren
                 <h3 className="font-semibold text-slate-800 border-b border-slate-100 pb-2 mb-3 text-sm uppercase tracking-wide">Visit Details</h3>
                 <div className="space-y-3">
                   {[["Factory", visit.factory_name, Icon.building], ["Visitor", visit.visitor_name, Icon.user],
-                    ["Purpose", visit.purpose, Icon.clipboard], ["Location", visit.location_address, Icon.pin]
+                    ["Purpose", visit.purpose, Icon.clipboard], ["Location", resolvedAddress, Icon.pin]
                   ].filter(([, v]) => v).map(([label, val, icon]) => (
                     <div key={label}>
                       <label className="text-xs text-slate-500 uppercase tracking-wide font-medium">{label}</label>
@@ -1074,9 +1093,9 @@ function VisitDetailPage({ visitId, visits, setVisits, factories, onBack, curren
                       src={`https://www.openstreetmap.org/export/embed.html?bbox=${visit.longitude - 0.005},${visit.latitude - 0.005},${visit.longitude + 0.005},${visit.latitude + 0.005}&layer=mapnik&marker=${visit.latitude},${visit.longitude}`}
                       allowFullScreen />
                   ) : (
-                    <div className="p-4 text-sm text-slate-600 flex items-start gap-2">{Icon.pin} {visit.location_address}</div>
+                    <div className="p-4 text-sm text-slate-600 flex items-start gap-2">{Icon.pin} {resolvedAddress}</div>
                   )}
-                  {visit.location_address && <div className="px-4 py-2 bg-slate-50 text-xs text-slate-500 border-t border-slate-100">{visit.location_address}</div>}
+                  {resolvedAddress && <div className="px-4 py-2 bg-slate-50 text-xs text-slate-500 border-t border-slate-100">{resolvedAddress}</div>}
                 </Card>
               ) : null}
             </div>
