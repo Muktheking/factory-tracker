@@ -4,8 +4,8 @@ import { createClient } from "@supabase/supabase-js";
 // ─────────────────────────────────────────────────────────────────────────────
 // SUPABASE CONFIG — paste your project URL and anon key here
 // ─────────────────────────────────────────────────────────────────────────────
-const SUPABASE_URL  = "https://gtgwnvtckrnhzbjodgvd.supabase.co";
-const SUPABASE_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imd0Z3dudnRja3JuaHpiam9kZ3ZkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMyMTAzNDAsImV4cCI6MjA4ODc4NjM0MH0.4-7mYTWKjabHOlvNMuNJ3o_pzhDDoGd_2XFDwIbGvNc";
+const SUPABASE_URL  = "https://YOUR_PROJECT_ID.supabase.co";
+const SUPABASE_ANON = "YOUR_ANON_KEY";
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON);
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -873,9 +873,16 @@ function VisitForm({ visit, factories, currentUser, onSave, onCancel }) {
       async (pos) => {
         const { latitude, longitude } = pos.coords;
         try {
-          const res = await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${latitude}&lon=${longitude}&format=json`, { headers: { "Accept-Language": "en" } });
+          const res = await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${latitude}&lon=${longitude}&format=json&addressdetails=1`, { headers: { "Accept-Language": "en" } });
           const data = await res.json();
-          setForm((p) => ({ ...p, latitude, longitude, location_address: data.display_name || `${latitude.toFixed(5)}, ${longitude.toFixed(5)}` }));
+          const addr = data.address || {};
+          const readable = [
+            addr.road || addr.pedestrian || addr.street,
+            addr.suburb || addr.neighbourhood,
+            addr.city || addr.town || addr.village,
+            addr.country
+          ].filter(Boolean).join(", ");
+          setForm((p) => ({ ...p, latitude, longitude, location_address: readable || data.display_name || `${latitude.toFixed(5)}, ${longitude.toFixed(5)}` }));
         } catch {
           setForm((p) => ({ ...p, latitude, longitude, location_address: `${latitude.toFixed(5)}, ${longitude.toFixed(5)}` }));
         }
