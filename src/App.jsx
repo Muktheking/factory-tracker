@@ -1077,7 +1077,7 @@ function VisitDetailPage({ visitId, visits, setVisits, factories, onBack, curren
                   <div className="p-3 border-b border-slate-100 flex items-center justify-between">
                     <h3 className="font-semibold text-slate-800 text-sm flex items-center gap-2">{Icon.pin} Location</h3>
                     {visit.latitude && visit.longitude && (
-                      <a href={`https://www.amap.com/search?query=${visit.latitude},${visit.longitude}&center=${visit.longitude},${visit.latitude}`} target="_blank" rel="noreferrer"
+                      <a href={`https://uri.amap.com/marker?position=${visit.longitude},${visit.latitude}&name=Visit+Location&coordinate=gaode&zoom=15`} target="_blank" rel="noreferrer"
                         className="text-xs font-medium text-amber-600 hover:text-amber-700">Open in Amap →</a>
                     )}
                   </div>
