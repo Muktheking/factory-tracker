@@ -65,7 +65,9 @@ const TRANSLATIONS = {
     searchFactories: "Search factories…", searchDevs: "Search developments…",
     newestFirst: "Newest First", nameAZ: "Name A-Z", allFactories: "All Factories",
     followUpNeeded: "⏰ Follow-up needed", daysOpen: "d open", daysToComplete: "d to complete",
-    sameDay: "Same day", today: "Today",
+    sameDay: "Same day", today: "Today", thisWeek: "This Week", allTime: "All Time",
+    month: "Month", year: "Year", clearFilter: "Clear filter", allVisitors: "All Visitors",
+    allTeamMembers: "All Team Members", byTeamMember: "By Team Member",
     manageFactories: "Manage factory locations and contacts", totalFactories: "Total Factories",
     development: "development", developments: "developments", open3Days: "open 3+ days with no factory update",
     updateFactory: "Update Factory", noVisitsFound: "No visits found", noDevsFound: "No developments found",
@@ -132,7 +134,9 @@ const TRANSLATIONS = {
     searchFactories: "搜索工厂…", searchDevs: "搜索开发…",
     newestFirst: "最新优先", nameAZ: "名称 A-Z", allFactories: "所有工厂",
     followUpNeeded: "⏰ 需要跟进", daysOpen: "天 未完成", daysToComplete: "天 完成",
-    sameDay: "当天完成", today: "今天",
+    sameDay: "当天完成", today: "今天", thisWeek: "本周", allTime: "全部时间",
+    month: "月份", year: "年份", clearFilter: "清除筛选", allVisitors: "所有拜访人",
+    allTeamMembers: "所有跟进人员", byTeamMember: "按跟进人员",
     manageFactories: "管理工厂地址和联系方式", totalFactories: "工厂总数",
     development: "条开发", developments: "条开发", open3Days: "超3天无工厂更新",
     updateFactory: "更新工厂", noVisitsFound: "未找到拜访记录", noDevsFound: "未找到开发记录",
@@ -439,7 +443,7 @@ function ConfirmDialog({ message, onConfirm, onCancel }) {
 function LoadingScreen({ message = "Connecting to database…" }) {
   return (
     <div className="min-h-screen bg-slate-900 flex flex-col items-center justify-center gap-4">
-      <div className="w-14 h-14 rounded-2xl bg-amber-500 flex items-center justify-center text-white text-xl font-bold animate-pulse">FV</div>
+      <div className="animate-pulse"><LokaLogo size={72} /></div>
       <p className="text-slate-400 text-sm">{message}</p>
     </div>
   );
@@ -512,7 +516,7 @@ function LoginScreen({ onLogin }) {
   return (
     <div className="min-h-screen bg-slate-900 flex flex-col items-center justify-center p-4">
       <div className="flex flex-col items-center mb-8">
-        <LokaLogo size={64} />
+        <LokaLogo size={128} />
         <h1 className="text-white text-2xl font-bold mt-3">{t("factoryTrackerTitle")}</h1>
         <p className="text-slate-400 text-sm mt-1">{t("welcomeBack")}</p>
         {/* Language switcher on login screen */}
@@ -976,8 +980,8 @@ function DashboardPage({ visits, devs, factories, setPage, needsFollowUp, onView
     return () => clearInterval(timerRef.current);
   }, [isSupplier]);
 
-  const recentVisits = [...visits].sort((a, b) => new Date(b.visit_date) - new Date(a.visit_date)).slice(0, 3);
-  const recentDevs   = [...devs].sort((a, b) => new Date(b.created_date) - new Date(a.created_date)).slice(0, 3);
+  const recentVisits = [...visits].sort((a, b) => new Date(b.visit_date) - new Date(a.visit_date)).slice(0, 10);
+  const recentDevs   = [...devs].sort((a, b) => new Date(b.created_date) - new Date(a.created_date)).slice(0, 10);
   const openCount    = devs.filter((d) => d.status === "open" || d.status === "in_progress").length;
 
   const stats = [
@@ -1203,26 +1207,40 @@ function VisitsPage({ visits, setVisits, factories, currentUser, onView, showToa
         <div className="max-w-5xl mx-auto px-4 sm:px-6 py-6">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
             <div>
-              <h1 className="text-3xl font-bold">Factory Visits</h1>
+              <h1 className="text-3xl font-bold">{t("visits")}</h1>
               <p className="text-slate-400 mt-1 text-sm">Track and log all factory visits</p>
             </div>
             <Btn variant="amber" size="lg" onClick={() => { setEditingVisit(null); setShowForm(true); }}>
-              {Icon.plus} Log New Visit
+              {Icon.plus} {t("newVisit")}
             </Btn>
           </div>
-          <div className="grid grid-cols-4 gap-3 mt-6">
+          <div className="grid grid-cols-3 gap-3 mt-6">
             {[
-              { label: "Total", value: statsTotal, filter: "all" },
-              { label: "Today", value: statsToday, filter: "today" },
-              { label: "This Week", value: statsWeek, filter: "week" },
-              { label: "Factories", value: statsFactories, filter: null },
-            ].map(({ label, value, filter }) => (
-              <div key={label} onClick={() => filter !== null && setTimeFilter(filter)}
-                className={`rounded-xl p-4 border transition-all ${filter !== null ? "cursor-pointer hover:bg-white/20 hover:scale-105" : ""} ${timeFilter === filter && filter !== null ? "bg-amber-500/30 border-amber-400" : "bg-white/10 border-white/10"}`}>
-                <p className="text-2xl font-bold">{value}</p>
-                <p className="text-slate-300 text-xs mt-0.5">{label}</p>
-              </div>
-            ))}
+              { label: t("total"), value: statsTotal, filters: ["all"] },
+              { label: t("today"), value: statsToday, filters: ["today", "week", "month", "year"], isTimeBox: true },
+              { label: t("factories"), value: statsFactories, filters: null },
+            ].map(({ label, value, filters, isTimeBox }) => {
+              const isActive = isTimeBox
+                ? (timeFilter !== "all")
+                : (filters && filters.includes(timeFilter));
+              return (
+                <div key={label}
+                  onClick={() => {
+                    if (isTimeBox) {
+                      // cycle through time filters
+                      const cycle = ["all","today","week","month","year"];
+                      const idx = cycle.indexOf(timeFilter);
+                      setTimeFilter(cycle[(idx + 1) % cycle.length]);
+                    } else if (filters) {
+                      setTimeFilter(filters[0]);
+                    }
+                  }}
+                  className={`rounded-xl p-4 border transition-all ${filters !== null || isTimeBox ? "cursor-pointer hover:bg-white/20 hover:scale-105" : ""} ${isActive ? "bg-amber-500/30 border-amber-400" : "bg-white/10 border-white/10"}`}>
+                  <p className="text-2xl font-bold">{value}</p>
+                  <p className="text-slate-300 text-xs mt-0.5">{label}{isTimeBox && timeFilter !== "all" ? ` · ${timeFilter}` : ""}</p>
+                </div>
+              );
+            })}
           </div>
         </div>
       </div>
@@ -1238,29 +1256,31 @@ function VisitsPage({ visits, setVisits, factories, currentUser, onView, showToa
             <div className="flex flex-col sm:flex-row gap-3 mb-3">
               <div className="relative flex-1">
                 <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400">{Icon.search}</span>
-                <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search visits…" className="pl-11" />
+                <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder={t("search")} className="pl-11" />
               </div>
               <Select value={filterFactory} onChange={setFilterFactory} className="sm:w-44">
-                <option value="all">All Factories</option>
+                <option value="all">{t("allFactories")}</option>
                 {factories.map((f) => <option key={f.id} value={f.id}>{f.name}</option>)}
               </Select>
-              <Select value={filterVisitor} onChange={setFilterVisitor} className="sm:w-40">
-                <option value="all">All Visitors</option>
-                {visitors.map((v) => <option key={v} value={v}>{v}</option>)}
-              </Select>
+              {isAdmin && (
+                <Select value={filterVisitor} onChange={setFilterVisitor} className="sm:w-40">
+                  <option value="all">{t("allVisitors")}</option>
+                  {visitors.map((v) => <option key={v} value={v}>{v}</option>)}
+                </Select>
+              )}
             </div>
             <div className="flex flex-wrap gap-2 mb-5 items-center">
-              {[["all","All Time"],["today","Today"],["week","This Week"]].map(([v,l]) => (
+              {[["all", t("allTime")],["today", t("today")],["week", t("thisWeek")]].map(([v,l]) => (
                 <button key={v} onClick={() => setTimeFilter(v)}
                   className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all border ${timeFilter === v ? "bg-amber-500 text-white border-amber-500" : "bg-white text-slate-600 border-slate-200 hover:border-amber-400"}`}>{l}</button>
               ))}
               <div className="flex items-center gap-1.5">
-                <span className="text-xs text-slate-500">Month:</span>
+                <span className="text-xs text-slate-500">{t("month")}:</span>
                 <input type="month" value={customMonth} onChange={e => { setCustomMonth(e.target.value); setCustomYear(""); setTimeFilter("month"); }}
                   className="h-8 px-2 text-xs border border-slate-200 rounded-lg focus:outline-none focus:border-amber-400" />
               </div>
               <div className="flex items-center gap-1.5">
-                <span className="text-xs text-slate-500">Year:</span>
+                <span className="text-xs text-slate-500">{t("year")}:</span>
                 <select value={customYear} onChange={e => { setCustomYear(e.target.value); setCustomMonth(""); setTimeFilter(e.target.value ? "year" : "all"); }}
                   className="h-8 px-2 text-xs border border-slate-200 rounded-lg focus:outline-none focus:border-amber-400">
                   <option value="">—</option>
@@ -1269,7 +1289,7 @@ function VisitsPage({ visits, setVisits, factories, currentUser, onView, showToa
               </div>
               {timeFilter !== "all" && (
                 <button onClick={() => { setTimeFilter("all"); setCustomMonth(""); setCustomYear(""); }}
-                  className="text-xs text-red-400 hover:text-red-600 underline">Clear filter</button>
+                  className="text-xs text-red-400 hover:text-red-600 underline">{t("clearFilter")}</button>
               )}
             </div>
             {filtered.length === 0
@@ -1592,7 +1612,7 @@ function DevelopmentsPage({ devs, setDevs, factories, users, currentUser, onView
   const [sortBy, setSortBy]         = useState("created_date");
   const [filterFactory, setFilterFactory] = useState("all");
   const isAdmin = currentUser?.role === "admin";
-
+  const isSupplier = currentUser?.role === "supplier";
   const [filterUser, setFilterUser] = useState("all");
   const allUsers = [...new Set(devs.map(d => d.team_member_name).filter(Boolean))];
 
@@ -1663,15 +1683,17 @@ function DevelopmentsPage({ devs, setDevs, factories, users, currentUser, onView
         <div className="max-w-5xl mx-auto px-4 sm:px-6 py-6">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
             <div>
-              <h1 className="text-3xl font-bold">Developments</h1>
+              <h1 className="text-3xl font-bold">{t("dev")}</h1>
               <p className="text-slate-300 mt-1 text-sm">Track product development requests</p>
             </div>
-            <Btn variant="purple" size="lg" onClick={() => { setEditingDev(null); setShowForm(true); }}>
-              {Icon.plus} New Development
-            </Btn>
+            {!isSupplier && (
+              <Btn variant="purple" size="lg" onClick={() => { setEditingDev(null); setShowForm(true); }}>
+                {Icon.plus} {t("newDev")}
+              </Btn>
+            )}
           </div>
           <div className="grid grid-cols-3 gap-3 mt-6">
-            {[[t("active"), openCount, "open"], [t("completed"), doneCount, "completed"], ["Total", factoryDevs.length, null]].map(([label, value, tabTarget]) => (
+            {[[t("active"), openCount, "open"], [t("completed"), doneCount, "completed"], [t("total"), factoryDevs.length, null]].map(([label, value, tabTarget]) => (
               <div key={label} onClick={() => tabTarget && setTab(tabTarget)}
                 className={`rounded-xl p-4 border transition-all ${tabTarget ? "cursor-pointer hover:bg-white/20 hover:scale-105" : ""} bg-white/10 border-white/10`}>
                 <p className="text-2xl font-bold">{value}</p>
@@ -1701,25 +1723,27 @@ function DevelopmentsPage({ devs, setDevs, factories, users, currentUser, onView
                 <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400">{Icon.search}</span>
                 <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder={t("searchDevs")} className="pl-11" />
               </div>
-              <Select value={filterFactory} onChange={setFilterFactory} className="sm:w-44">
-                <option value="all">All Factories</option>
-                {factories.map((f) => <option key={f.id} value={f.id}>{f.name}</option>)}
-              </Select>
+              {!isSupplier && (
+                <Select value={filterFactory} onChange={setFilterFactory} className="sm:w-44">
+                  <option value="all">{t("allFactories")}</option>
+                  {factories.map((f) => <option key={f.id} value={f.id}>{f.name}</option>)}
+                </Select>
+              )}
               <Select value={sortBy} onChange={setSortBy} className="sm:w-40">
-                <option value="created_date">Newest first</option>
-                <option value="title">Name A-Z</option>
-                {isAdmin && <option value="user">By Team Member</option>}
+                <option value="created_date">{t("newestFirst")}</option>
+                <option value="title">{t("nameAZ")}</option>
+                {isAdmin && <option value="user">{t("byTeamMember")}</option>}
               </Select>
               {isAdmin && (
                 <Select value={filterUser} onChange={setFilterUser} className="sm:w-44">
-                  <option value="all">All Team Members</option>
+                  <option value="all">{t("allTeamMembers")}</option>
                   {allUsers.map(u => <option key={u} value={u}>{u}</option>)}
                 </Select>
               )}
             </div>
             {filtered.length === 0
               ? <EmptyState icon={Icon.flask} title={t("noDevsFound")} subtitle={t("createFirstDev")}
-                  action={<Btn variant="purple" onClick={() => setShowForm(true)}>{Icon.plus} New Development</Btn>} />
+                  action={!isSupplier ? <Btn variant="purple" onClick={() => setShowForm(true)}>{Icon.plus} {t("newDev")}</Btn> : null} />
               : <div className="space-y-3">
                   {filtered.map((d) => (
                     <DevCard key={d.id} dev={d}
