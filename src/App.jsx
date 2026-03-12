@@ -2575,9 +2575,9 @@ function UsersPage({ users, setUsers, factories, currentUser, showToast, askConf
           </div>
           <div className="grid grid-cols-3 gap-3">
             {[
-              { label: lang === "zh" ? "管理员" : "Admins",   count: users.filter(u => u.role === "admin").length,    color: "bg-purple-500/20 border-purple-500/30", text: "text-purple-200" },
-              { label: lang === "zh" ? "用户" : "Users",      count: users.filter(u => u.role === "user").length,     color: "bg-blue-500/20 border-blue-500/30",   text: "text-blue-200" },
-              { label: lang === "zh" ? "供应商" : "Suppliers", count: users.filter(u => u.role === "supplier").length, color: "bg-orange-500/20 border-orange-500/30", text: "text-orange-200" },
+              { label: "Admins",    count: users.filter(u => u.role === "admin").length,    color: "bg-purple-500/20 border-purple-500/30", text: "text-purple-200" },
+              { label: "Users",     count: users.filter(u => u.role === "user").length,     color: "bg-blue-500/20 border-blue-500/30",     text: "text-blue-200" },
+              { label: "Suppliers", count: users.filter(u => u.role === "supplier").length, color: "bg-orange-500/20 border-orange-500/30", text: "text-orange-200" },
             ].map(({ label, count, color, text }) => (
               <div key={label} className={`rounded-xl p-4 border ${color}`}>
                 <p className="text-2xl font-bold text-white">{count}</p>
