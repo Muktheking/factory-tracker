@@ -172,8 +172,22 @@ const SUPABASE_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFz
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON);
 
 // ─────────────────────────────────────────────────────────────────────────────
-// STORAGE UPLOAD — uploads image to Supabase Storage, returns public URL
+// EXPORT TO EXCEL — uses SheetJS loaded from CDN
 // ─────────────────────────────────────────────────────────────────────────────
+async function exportToExcel(rows, filename) {
+  if (!window.XLSX) {
+    await new Promise((resolve, reject) => {
+      const s = document.createElement("script");
+      s.src = "https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js";
+      s.onload = resolve; s.onerror = reject;
+      document.head.appendChild(s);
+    });
+  }
+  const ws = window.XLSX.utils.json_to_sheet(rows);
+  const wb = window.XLSX.utils.book_new();
+  window.XLSX.utils.book_append_sheet(wb, ws, "Data");
+  window.XLSX.writeFile(wb, filename);
+}
 // Compress image to max 1200px wide and ~80% quality before uploading
 async function compressImage(file, maxWidth = 1200, quality = 0.82) {
   return new Promise((resolve) => {
@@ -922,7 +936,7 @@ export default function App() {
   } else if (page === "factories") {
     content = (
       <FactoriesPage factories={factories} setFactories={setFactories} currentUser={currentUser}
-        showToast={showToast} askConfirm={askConfirm} />
+        devs={devs} visits={visits} showToast={showToast} askConfirm={askConfirm} />
     );
   } else if (page === "users") {
     content = (
@@ -1391,6 +1405,17 @@ function VisitsPage({ visits, setVisits, factories, currentUser, onView, showToa
                 <button onClick={() => { setTimeFilter("all"); setCustomMonth(""); setCustomYear(""); }}
                   className="text-xs text-red-400 hover:text-red-600 underline">{t("clearFilter")}</button>
               )}
+              <button onClick={() => {
+                const rows = filtered.map(v => ({
+                  "Date": v.visit_date?.slice(0,10), "Factory": v.factory_name,
+                  "Visitor": v.visitor_name, "Order #": v.order_number,
+                  "Item": v.item, "Purpose": v.purpose, "Location": v.location_address,
+                }));
+                exportToExcel(rows, `visits_${new Date().toISOString().slice(0,10)}.xlsx`);
+              }} className="ml-auto flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 transition-colors">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                Export Excel ({filtered.length})
+              </button>
             </div>
             {filtered.length === 0
               ? <EmptyState icon={Icon.clipboard} title={t("noVisitsFound")} subtitle={t("logFirstVisit")}
@@ -1868,6 +1893,20 @@ function DevelopmentsPage({ devs, setDevs, factories, users, currentUser, onView
                   {allUsers.map(u => <option key={u} value={u}>{u}</option>)}
                 </Select>
               )}
+              <button onClick={() => {
+                const rows = filtered.map(d => ({
+                  "ID": d.id, "Title": d.title, "Status": DEV_STATUS_LABEL()[d.status] || d.status,
+                  "Department": d.department, "Factory": d.factory_names?.join(", "),
+                  "Team Member": d.team_member_name, "Client": d.client_name,
+                  "Material": d.material, "Size": d.size, "Weight": d.weight,
+                  "Target Date": d.internal_estimated_date, "Target Price": d.internal_estimated_price,
+                  "Created": d.created_date,
+                }));
+                exportToExcel(rows, `developments_${new Date().toISOString().slice(0,10)}.xlsx`);
+              }} className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-medium bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 transition-colors whitespace-nowrap">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                Export ({filtered.length})
+              </button>
             </div>
             {filtered.length === 0
               ? <EmptyState icon={Icon.flask} title={t("noDevsFound")} subtitle={t("createFirstDev")}
@@ -2092,8 +2131,10 @@ function DevDetailPage({ devId, devs, setDevs, factories, getFactory, getUser, o
   ).length;
 
   async function changeStatus(status) {
-    await db.upsertDev({ ...dev, status, updates: undefined, messages: undefined });
-    setDevs((p) => p.map((d) => d.id === devId ? { ...d, status } : d));
+    const historyEntry = { status, changed_by: currentUser?.full_name || "Unknown", changed_at: new Date().toISOString() };
+    const newHistory = [...(dev.status_history || []), historyEntry];
+    await db.upsertDev({ ...dev, status, status_history: newHistory, updates: undefined, messages: undefined });
+    setDevs((p) => p.map((d) => d.id === devId ? { ...d, status, status_history: newHistory } : d));
     showToast(`Status: ${DEV_STATUS_LABEL()[status]}`);
   }
 
@@ -2186,7 +2227,7 @@ function DevDetailPage({ devId, devs, setDevs, factories, getFactory, getUser, o
               )}
               <Card className="shadow-sm overflow-hidden">
                 <div className="flex border-b border-slate-100">
-                  {[["updates", t("factoryUpdates")], ["chat", t("chat")]].map(([v, label]) => (
+                  {[["updates", t("factoryUpdates")], ["chat", t("chat")], ["history", "Status History"]].map(([v, label]) => (
                     <button key={v} onClick={() => setActiveTab(v)}
                       className={`flex-1 py-3 text-sm font-medium transition-colors relative ${activeTab === v ? "text-purple-600 border-b-2 border-purple-500" : "text-slate-500 hover:text-slate-700"}`}>
                       {label}
@@ -2213,6 +2254,35 @@ function DevDetailPage({ devId, devs, setDevs, factories, getFactory, getUser, o
                   </div>
                 )}
                 {activeTab === "chat" && <DevChat devId={devId} dev={dev} setDevs={setDevs} currentUser={currentUser} />}
+                {activeTab === "history" && (
+                  <div className="p-5 space-y-3">
+                    <h4 className="text-sm font-semibold text-slate-700">Status History</h4>
+                    {(!dev.status_history || dev.status_history.length === 0) ? (
+                      <p className="text-center text-slate-400 text-sm py-8">No status changes recorded yet.</p>
+                    ) : (
+                      <div className="relative">
+                        <div className="absolute left-3 top-0 bottom-0 w-0.5 bg-slate-200" />
+                        {[...dev.status_history].reverse().map((h, i) => {
+                          const colors = { open: "bg-blue-100 text-blue-700", in_progress: "bg-amber-100 text-amber-700", completed: "bg-green-100 text-green-700", cancelled: "bg-red-100 text-red-700" };
+                          return (
+                            <div key={i} className="flex items-start gap-3 pl-8 relative pb-4">
+                              <div className="absolute left-1.5 top-1.5 w-3 h-3 rounded-full bg-purple-400 border-2 border-white" />
+                              <div className="flex-1 bg-slate-50 rounded-xl p-3">
+                                <div className="flex items-center justify-between gap-2">
+                                  <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${colors[h.status] || "bg-slate-100 text-slate-600"}`}>
+                                    {DEV_STATUS_LABEL()[h.status] || h.status}
+                                  </span>
+                                  <span className="text-xs text-slate-400 whitespace-nowrap">{fmtDate(h.changed_at)}</span>
+                                </div>
+                                <p className="text-xs text-slate-500 mt-1">by {h.changed_by}</p>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                )}
               </Card>
             </div>
             <div className="space-y-4">
@@ -2483,7 +2553,7 @@ function DevChat({ devId, dev, setDevs, currentUser }) {
 // ─────────────────────────────────────────────────────────────────────────────
 // Factories
 // ─────────────────────────────────────────────────────────────────────────────
-function FactoriesPage({ factories, setFactories, currentUser, showToast, askConfirm }) {
+function FactoriesPage({ factories, setFactories, currentUser, devs = [], visits = [], showToast, askConfirm }) {
   const [showForm, setShowForm]           = useState(false);
   const [editingFactory, setEditingFactory] = useState(null);
   const [search, setSearch]               = useState("");
@@ -2542,7 +2612,13 @@ function FactoriesPage({ factories, setFactories, currentUser, showToast, askCon
                   action={isAdmin ? <Btn variant="amber" onClick={() => setShowForm(true)}>{Icon.plus} {t("addFactory")}</Btn> : null} />
               : (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {filtered.map((f) => (
+                  {filtered.map((f) => {
+                    const fDevs    = devs.filter(d => d.factory_ids?.includes(f.id));
+                    const fVisits  = visits.filter(v => v.factory_id === f.id);
+                    const completed = fDevs.filter(d => d.status === "completed").length;
+                    const active    = fDevs.filter(d => d.status === "open" || d.status === "in_progress").length;
+                    const compRate  = fDevs.length > 0 ? Math.round((completed / fDevs.length) * 100) : null;
+                    return (
                     <Card key={f.id} className="shadow-sm hover:shadow-lg transition-all p-5">
                       <div className="flex items-start justify-between">
                         <div className="flex items-start gap-3 flex-1 min-w-0">
@@ -2571,8 +2647,33 @@ function FactoriesPage({ factories, setFactories, currentUser, showToast, askCon
                           </div>
                         )}
                       </div>
+                      {(fDevs.length > 0 || fVisits.length > 0) && (
+                        <div className="mt-4 pt-3 border-t border-slate-100 grid grid-cols-3 gap-2">
+                          <div className="text-center">
+                            <p className="text-lg font-bold text-slate-800">{fDevs.length}</p>
+                            <p className="text-xs text-slate-500">Total Devs</p>
+                          </div>
+                          <div className="text-center">
+                            <p className="text-lg font-bold text-amber-600">{active}</p>
+                            <p className="text-xs text-slate-500">Active</p>
+                          </div>
+                          <div className="text-center">
+                            <p className={`text-lg font-bold ${compRate >= 70 ? "text-green-600" : compRate >= 40 ? "text-amber-600" : "text-slate-600"}`}>
+                              {compRate !== null ? `${compRate}%` : "—"}
+                            </p>
+                            <p className="text-xs text-slate-500">Completion</p>
+                          </div>
+                          {fVisits.length > 0 && (
+                            <div className="col-span-3 mt-1 flex items-center gap-1.5 text-xs text-slate-500">
+                              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M9 5H7a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/></svg>
+                              {fVisits.length} visit{fVisits.length > 1 ? "s" : ""} logged
+                            </div>
+                          )}
+                        </div>
+                      )}
                     </Card>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
           </>
