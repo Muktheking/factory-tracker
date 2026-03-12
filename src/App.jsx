@@ -2,6 +2,75 @@ import { useState, useRef, useEffect } from "react";
 import { createClient } from "@supabase/supabase-js";
 
 // ─────────────────────────────────────────────────────────────────────────────
+// LANGUAGE SYSTEM
+// ─────────────────────────────────────────────────────────────────────────────
+const TRANSLATIONS = {
+  en: {
+    dashboard: "Dashboard", visits: "Visits", dev: "Dev", factories: "Factories",
+    users: "Users", signOut: "Sign out", loading: "Loading your data…",
+    newVisit: "Log New Visit", newDev: "New Development", addFactory: "Add Factory",
+    addUser: "Add User", search: "Search…", active: "Active", completed: "Completed",
+    total: "Total", totalVisits: "Total Visits", activeDevs: "Active Devs",
+    needsFollowUp: "Needs Follow-up", recentVisits: "Recent Visits",
+    recentDevs: "Recent Developments", viewAll: "View all", view: "View",
+    edit: "Edit", delete: "Delete", save: "Save", cancel: "Cancel",
+    factoryUpdates: "Factory Updates", chat: "Chat", details: "Details",
+    internalInfo: "🔒 Internal Info", targetDate: "Target Date", targetPrice: "Target Price",
+    factoryContacts: "Factory Contacts", sellerContact: "Seller Contact",
+    send: "Send", typeMessage: "Type a message… (Enter to send)",
+    markComplete: "Mark Complete", reopen: "Reopen", remind: "Remind",
+    noMessages: "No messages yet. Start the conversation!",
+    noVisits: "No visits yet", noDevs: "No developments yet",
+    supplierPrice: "Supplier Price (¥)", internalPrice: "Target Price (RMB ¥)",
+    notifications: "Notifications", noNotifications: "No new notifications",
+    newMessage: "New message in", newVisitLogged: "New visit logged",
+    factoryAdded: "Factory added", infoEdited: "Info edited",
+    signIn: "Sign In", signUp: "Sign Up", email: "Email", password: "Password",
+    forgotPassword: "Forgot password?", welcomeBack: "Sign in to your account",
+  },
+  zh: {
+    dashboard: "首页", visits: "工厂拜访", dev: "开发", factories: "工厂", 
+    users: "用户", signOut: "退出登录", loading: "加载数据中…",
+    newVisit: "记录拜访", newDev: "新建开发", addFactory: "添加工厂",
+    addUser: "添加用户", search: "搜索…", active: "进行中", completed: "已完成",
+    total: "总计", totalVisits: "拜访总数", activeDevs: "进行中开发",
+    needsFollowUp: "需要跟进", recentVisits: "最近拜访",
+    recentDevs: "最近开发", viewAll: "查看全部", view: "查看",
+    edit: "编辑", delete: "删除", save: "保存", cancel: "取消",
+    factoryUpdates: "工厂更新", chat: "聊天", details: "详情",
+    internalInfo: "🔒 内部信息", targetDate: "目标日期", targetPrice: "目标价格",
+    factoryContacts: "工厂联系人", sellerContact: "销售联系人",
+    send: "发送", typeMessage: "输入消息…（回车发送）",
+    markComplete: "标记完成", reopen: "重新开启", remind: "提醒",
+    noMessages: "暂无消息，开始对话吧！",
+    noVisits: "暂无拜访记录", noDevs: "暂无开发记录",
+    supplierPrice: "供应商报价 (¥)", internalPrice: "目标价格（人民币 ¥）",
+    notifications: "通知", noNotifications: "暂无新通知",
+    newMessage: "新消息来自", newVisitLogged: "新增拜访记录",
+    factoryAdded: "工厂已添加", infoEdited: "信息已更新",
+    signIn: "登录", signUp: "注册", email: "邮箱", password: "密码",
+    forgotPassword: "忘记密码？", welcomeBack: "登录您的账户",
+  }
+};
+let globalLang = "en";
+const getLang = () => globalLang;
+const t = (key) => TRANSLATIONS[globalLang]?.[key] || TRANSLATIONS.en[key] || key;
+
+// Loka Fashion Logo SVG — recreated from brand logo
+const LokaLogo = ({ size = 32 }) => (
+  <svg width={size} height={size} viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <rect width="100" height="100" rx="12" fill="#1e293b"/>
+    {/* Bracket / F-shape mark */}
+    <rect x="12" y="12" width="14" height="76" fill="white"/>
+    <rect x="12" y="12" width="36" height="14" fill="white"/>
+    <rect x="12" y="45" width="28" height="12" fill="white"/>
+    <rect x="12" y="74" width="36" height="14" fill="white"/>
+    {/* "L" letter */}
+    <text x="56" y="72" fill="white" fontSize="46" fontWeight="900" fontFamily="Arial Black, sans-serif">L</text>
+  </svg>
+);
+
+// ─────────────────────────────────────────────────────────────────────────────
 // SUPABASE CONFIG — paste your project URL and anon key here
 // ─────────────────────────────────────────────────────────────────────────────
 const SUPABASE_URL  = "https://gtgwnvtckrnhzbjodgvd.supabase.co";
@@ -296,13 +365,16 @@ function ErrorScreen({ error }) {
 
 // Login / Sign-up screen
 function LoginScreen({ onLogin }) {
-  const [mode, setMode]       = useState("login"); // "login" | "signup"
+  const [mode, setMode]       = useState("login");
   const [email, setEmail]     = useState("");
   const [password, setPassword] = useState("");
   const [name, setName]       = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError]     = useState("");
   const [info, setInfo]       = useState("");
+  const [loginLang, setLoginLang] = useState("en");
+
+  function switchLang(l) { setLoginLang(l); globalLang = l; }
 
   async function handleLogin(e) {
     e.preventDefault();
@@ -320,7 +392,6 @@ function LoginScreen({ onLogin }) {
     const { data, error: err } = await supabase.auth.signUp({ email, password, options: { data: { full_name: name } } });
     setLoading(false);
     if (err) { setError(err.message); return; }
-    // Insert into users table so they appear in the app
     await supabase.from("users").upsert({
       id: "U-" + data.user.id.slice(0, 8).toUpperCase(),
       full_name: name, email, role: "user",
@@ -331,18 +402,24 @@ function LoginScreen({ onLogin }) {
 
   return (
     <div className="min-h-screen bg-slate-900 flex flex-col items-center justify-center p-4">
-      {/* Logo */}
       <div className="flex flex-col items-center mb-8">
-        <div className="w-16 h-16 rounded-2xl bg-amber-500 flex items-center justify-center text-white text-2xl font-bold mb-3">FV</div>
-        <h1 className="text-white text-2xl font-bold">Factory Tracker</h1>
-        <p className="text-slate-400 text-sm mt-1">Sign in to your account</p>
+        <LokaLogo size={64} />
+        <h1 className="text-white text-2xl font-bold mt-3">Factory Tracker</h1>
+        <p className="text-slate-400 text-sm mt-1">{t("welcomeBack")}</p>
+        {/* Language switcher on login screen */}
+        <div className="flex items-center bg-slate-700 rounded-lg overflow-hidden mt-3">
+          {["en","zh"].map(l => (
+            <button key={l} onClick={() => switchLang(l)}
+              className={`px-3 py-1.5 text-xs font-bold transition-colors ${loginLang === l ? "bg-amber-500 text-white" : "text-slate-400 hover:text-white"}`}>
+              {l === "en" ? "EN" : "中文"}
+            </button>
+          ))}
+        </div>
       </div>
 
-      {/* Card */}
       <div className="w-full max-w-sm bg-slate-800 rounded-2xl shadow-2xl p-6 border border-slate-700">
-        {/* Tabs */}
         <div className="flex rounded-xl bg-slate-700 p-1 mb-6">
-          {[["login", "Sign In"], ["signup", "Sign Up"]].map(([v, l]) => (
+          {[["login", t("signIn")], ["signup", t("signUp")]].map(([v, l]) => (
             <button key={v} onClick={() => { setMode(v); setError(""); setInfo(""); }}
               className={`flex-1 py-2 rounded-lg text-sm font-medium transition-all ${mode === v ? "bg-amber-500 text-white shadow" : "text-slate-400 hover:text-white"}`}>
               {l}
@@ -350,35 +427,31 @@ function LoginScreen({ onLogin }) {
           ))}
         </div>
 
-        {info && (
-          <div className="mb-4 px-4 py-3 bg-green-900/40 border border-green-700 rounded-xl text-green-300 text-sm">{info}</div>
-        )}
-        {error && (
-          <div className="mb-4 px-4 py-3 bg-red-900/40 border border-red-700 rounded-xl text-red-300 text-sm">{error}</div>
-        )}
+        {info && <div className="mb-4 px-4 py-3 bg-green-900/40 border border-green-700 rounded-xl text-green-300 text-sm">{info}</div>}
+        {error && <div className="mb-4 px-4 py-3 bg-red-900/40 border border-red-700 rounded-xl text-red-300 text-sm">{error}</div>}
 
         <form onSubmit={mode === "login" ? handleLogin : handleSignup} className="space-y-4">
           {mode === "signup" && (
             <div>
-              <label className="block text-sm font-medium text-slate-300 mb-1.5">Full Name</label>
-              <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Your full name" required
+              <label className="block text-sm font-medium text-slate-300 mb-1.5">{loginLang === "zh" ? "姓名" : "Full Name"}</label>
+              <input value={name} onChange={(e) => setName(e.target.value)} placeholder={loginLang === "zh" ? "您的姓名" : "Your full name"} required
                 className="w-full h-12 px-4 bg-slate-700 border border-slate-600 rounded-xl text-white text-sm placeholder:text-slate-500 focus:outline-none focus:border-amber-500" />
             </div>
           )}
           <div>
-            <label className="block text-sm font-medium text-slate-300 mb-1.5">Email</label>
+            <label className="block text-sm font-medium text-slate-300 mb-1.5">{t("email")}</label>
             <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@company.com" required
               className="w-full h-12 px-4 bg-slate-700 border border-slate-600 rounded-xl text-white text-sm placeholder:text-slate-500 focus:outline-none focus:border-amber-500" />
           </div>
           <div>
-            <label className="block text-sm font-medium text-slate-300 mb-1.5">Password</label>
+            <label className="block text-sm font-medium text-slate-300 mb-1.5">{t("password")}</label>
             <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="••••••••" required minLength={6}
               className="w-full h-12 px-4 bg-slate-700 border border-slate-600 rounded-xl text-white text-sm placeholder:text-slate-500 focus:outline-none focus:border-amber-500" />
           </div>
           <button type="submit" disabled={loading}
             className="w-full h-12 bg-amber-500 hover:bg-amber-600 disabled:opacity-50 text-white font-semibold rounded-xl transition-all flex items-center justify-center gap-2">
             {loading ? <span className="animate-spin">⏳</span> : null}
-            {mode === "login" ? "Sign In" : "Create Account"}
+            {mode === "login" ? t("signIn") : (loginLang === "zh" ? "创建账户" : "Create Account")}
           </button>
         </form>
 
@@ -389,13 +462,12 @@ function LoginScreen({ onLogin }) {
             const { error: err } = await supabase.auth.resetPasswordForEmail(email);
             setLoading(false);
             if (err) setError(err.message);
-            else setInfo("Password reset email sent — check your inbox.");
+            else setInfo(loginLang === "zh" ? "重置密码邮件已发送，请查收。" : "Password reset email sent — check your inbox.");
           }} className="w-full text-center text-xs text-slate-500 hover:text-slate-300 mt-4 transition-colors">
-            Forgot password?
+            {t("forgotPassword")}
           </button>
         )}
       </div>
-
       <p className="text-slate-600 text-xs mt-6">Factory Tracker · Internal Use Only</p>
     </div>
   );
@@ -408,6 +480,16 @@ export default function App() {
   const [session, setSession]     = useState(undefined); // undefined = checking, null = logged out
   const [loading, setLoading]     = useState(true);
   const initialLoadDone = useRef(false);
+  const [lang, setLang]           = useState("en");
+  const [notifications, setNotifications] = useState([]);
+  const [showNotifs, setShowNotifs] = useState(false);
+
+  function changeLang(l) { setLang(l); globalLang = l; }
+
+  function addNotification(msg, devId = null, type = "info") {
+    const n = { id: Date.now(), msg, devId, type, time: new Date() };
+    setNotifications(prev => [n, ...prev].slice(0, 50));
+  }
   const [dbError, setDbError]     = useState(null);
   const [page, setPage]           = useState("dashboard");
   const [factories, setFactories] = useState([]);
@@ -448,12 +530,32 @@ export default function App() {
   useEffect(() => {
     if (!session || loading || dbError) return;
     const ch = supabase.channel("realtime-all")
-      .on("postgres_changes", { event: "*", schema: "public", table: "factories" }, () => { db.getFactories().then(setFactories); })
+      .on("postgres_changes", { event: "*", schema: "public", table: "factories" }, (payload) => {
+        db.getFactories().then(setFactories);
+        if (isAdmin && payload.eventType === "INSERT") addNotification(`${t("factoryAdded")}: ${payload.new?.name || ""}`, null, "factory");
+        if (isAdmin && payload.eventType === "UPDATE") addNotification(`${t("infoEdited")}: ${payload.new?.name || ""}`, null, "edit");
+      })
       .on("postgres_changes", { event: "*", schema: "public", table: "users" }, () => { db.getUsers().then(setUsers); })
       .on("postgres_changes", { event: "*", schema: "public", table: "developments" }, () => { db.getDevs().then(setDevs); })
       .on("postgres_changes", { event: "*", schema: "public", table: "development_updates" }, () => { db.getDevs().then(setDevs); })
-      .on("postgres_changes", { event: "*", schema: "public", table: "development_messages" }, () => { db.getDevs().then(setDevs); })
-      .on("postgres_changes", { event: "*", schema: "public", table: "visits" }, () => { db.getVisits().then(setVisits); })
+      .on("postgres_changes", { event: "*", schema: "public", table: "development_messages" }, (payload) => {
+        db.getDevs().then((newDevs) => {
+          setDevs(newDevs);
+          // Notify if message is from someone else
+          const msg = payload.new;
+          if (msg && msg.sender_name !== currentUser?.full_name) {
+            const dev = newDevs.find(d => d.id === msg.development_id);
+            addNotification(`${t("newMessage")} ${msg.sender_name}: ${msg.message?.slice(0, 40)}`, msg.development_id, "chat");
+          }
+        });
+      })
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "visits" }, (payload) => {
+        db.getVisits().then(setVisits);
+        if (isAdmin && payload.new?.visitor_name !== currentUser?.full_name) {
+          addNotification(`${t("newVisitLogged")}: ${payload.new?.visitor_name} → ${payload.new?.factory_name}`, null, "visit");
+        }
+      })
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "visits" }, () => { db.getVisits().then(setVisits); })
       .subscribe();
     return () => supabase.removeChannel(ch);
   }, [session, loading, dbError]);
@@ -506,11 +608,11 @@ export default function App() {
   const isSupplier = role === "supplier";
 
   const navItems = [
-    { id: "dashboard",    icon: Icon.grid,      label: "Dashboard" },
-    !isSupplier && { id: "visits", icon: Icon.clipboard, label: "Visits" },
-    { id: "developments", icon: Icon.flask,     label: "Dev" },
-    !isSupplier && { id: "factories", icon: Icon.building, label: "Factories" },
-    isAdmin && { id: "users", icon: Icon.users, label: "Users" },
+    { id: "dashboard",    icon: Icon.grid,      label: t("dashboard") },
+    !isSupplier && { id: "visits", icon: Icon.clipboard, label: t("visits") },
+    { id: "developments", icon: Icon.flask,     label: t("dev") },
+    !isSupplier && { id: "factories", icon: Icon.building, label: t("factories") },
+    isAdmin && { id: "users", icon: Icon.users, label: t("users") },
   ].filter(Boolean);
 
   function goPage(id) { setDetail(null); setPage(id); }
@@ -520,7 +622,7 @@ export default function App() {
   // Not logged in — show login screen
   if (!session) return <LoginScreen onLogin={setSession} />;
   // Logged in but data still loading
-  if (loading) return <LoadingScreen message="Loading your data…" />;
+  if (loading) return <LoadingScreen message={t("loading")} />;
   if (dbError) return <ErrorScreen error={dbError} />;
 
   let content = null;
@@ -586,7 +688,7 @@ export default function App() {
       <header className="fixed top-0 left-0 right-0 z-50 bg-slate-900 shadow-xl">
         <div className="flex items-center h-14 px-2 sm:px-4 gap-1 sm:gap-2 max-w-6xl mx-auto">
           <button onClick={() => goPage("dashboard")} className="flex items-center gap-2 mr-2 sm:mr-4 flex-shrink-0">
-            <div className="w-8 h-8 rounded-lg bg-amber-500 flex items-center justify-center text-white text-xs font-bold">FV</div>
+            <LokaLogo size={32} />
             <span className="hidden md:block text-white font-semibold text-sm">Factory Tracker</span>
           </button>
           <nav className="flex items-center gap-0.5 sm:gap-1 flex-1 overflow-x-auto">
@@ -602,7 +704,62 @@ export default function App() {
               );
             })}
           </nav>
-          <div className="flex-shrink-0 flex items-center gap-2 ml-2">
+          <div className="flex-shrink-0 flex items-center gap-1.5 ml-2">
+            {/* Language switcher */}
+            <div className="flex items-center bg-white/10 rounded-lg overflow-hidden">
+              {["en","zh"].map(l => (
+                <button key={l} onClick={() => changeLang(l)}
+                  className={`px-2 py-1 text-xs font-bold transition-colors ${lang === l ? "bg-amber-500 text-white" : "text-slate-400 hover:text-white"}`}>
+                  {l === "en" ? "EN" : "中文"}
+                </button>
+              ))}
+            </div>
+            {/* Notification bell */}
+            <div className="relative">
+              <button onClick={() => setShowNotifs(s => !s)}
+                className="relative w-8 h-8 flex items-center justify-center text-slate-400 hover:text-white hover:bg-white/10 rounded-lg transition-colors">
+                <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6 6 0 10-12 0v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
+                </svg>
+                {notifications.length > 0 && (
+                  <span className="absolute top-0.5 right-0.5 w-2 h-2 bg-red-500 rounded-full" />
+                )}
+              </button>
+              {showNotifs && (
+                <div className="absolute right-0 top-10 w-80 bg-white rounded-2xl shadow-2xl border border-slate-100 z-50 overflow-hidden">
+                  <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100">
+                    <span className="font-semibold text-slate-800 text-sm">{t("notifications")}</span>
+                    {notifications.length > 0 && (
+                      <button onClick={() => setNotifications([])} className="text-xs text-slate-400 hover:text-red-500">Clear all</button>
+                    )}
+                  </div>
+                  <div className="max-h-80 overflow-y-auto">
+                    {notifications.length === 0
+                      ? <p className="text-center text-slate-400 text-sm py-6">{t("noNotifications")}</p>
+                      : notifications.map(n => (
+                          <button key={n.id} onClick={() => {
+                            setShowNotifs(false);
+                            if (n.devId) { setDetail({ type: "dev", id: n.devId }); }
+                            else if (n.type === "visit") goPage("visits");
+                            setNotifications(prev => prev.filter(x => x.id !== n.id));
+                          }}
+                            className="w-full text-left px-4 py-3 hover:bg-slate-50 border-b border-slate-50 transition-colors">
+                            <div className="flex items-start gap-2">
+                              <span className="text-lg flex-shrink-0">
+                                {n.type === "chat" ? "💬" : n.type === "visit" ? "🏭" : n.type === "factory" ? "🏢" : "✏️"}
+                              </span>
+                              <div>
+                                <p className="text-sm text-slate-700 leading-snug">{n.msg}</p>
+                                <p className="text-xs text-slate-400 mt-0.5">{n.time.toLocaleTimeString()}</p>
+                              </div>
+                            </div>
+                          </button>
+                        ))
+                    }
+                  </div>
+                </div>
+              )}
+            </div>
             <div className="w-8 h-8 rounded-full bg-amber-500/20 border border-amber-500/40 flex items-center justify-center text-amber-400 text-xs font-bold">
               {currentUser?.full_name?.charAt(0) || authEmail?.charAt(0)?.toUpperCase() || "?"}
             </div>
@@ -612,7 +769,7 @@ export default function App() {
             </div>
             <button onClick={signOut}
               className="ml-1 px-2.5 py-1.5 text-xs font-medium text-slate-400 hover:text-white hover:bg-white/10 rounded-lg transition-colors">
-              Sign out
+              {t("signOut")}
             </button>
           </div>
         </div>
@@ -1561,11 +1718,11 @@ function DevDetailPage({ devId, devs, setDevs, factories, getFactory, getUser, o
               )}
               <Card className="shadow-sm overflow-hidden">
                 <div className="flex border-b border-slate-100">
-                  {[["updates", "Factory Updates"], ["chat", "Chat"]].map(([v, label]) => (
+                  {[["updates", t("factoryUpdates")], ["chat", t("chat")]].map(([v, label]) => (
                     <button key={v} onClick={() => setActiveTab(v)}
                       className={`flex-1 py-3 text-sm font-medium transition-colors relative ${activeTab === v ? "text-purple-600 border-b-2 border-purple-500" : "text-slate-500 hover:text-slate-700"}`}>
                       {label}
-                      {v === "chat" && unreadCount > 0 && (
+                      {v === "chat" && activeTab !== "chat" && unreadCount > 0 && (
                         <span className="absolute top-2 right-[calc(50%-20px)] w-2.5 h-2.5 bg-red-500 rounded-full" />
                       )}
                     </button>
@@ -1702,7 +1859,7 @@ function FactoryUpdateForm({ dev, onSave, onCancel }) {
         </div>
         <div><Label>Materials Arrival</Label><Input type="date" value={form.materials_arrival_date} onChange={(e) => set("materials_arrival_date", e.target.value)} /></div>
         <div><Label>Est. Finish Date</Label><Input type="date" value={form.estimated_finish_date} onChange={(e) => set("estimated_finish_date", e.target.value)} /></div>
-        <div><Label>Supplier Price ($)</Label><Input value={form.supplier_price} onChange={(e) => set("supplier_price", e.target.value)} placeholder="0.00" /></div>
+        <div><Label>{t("supplierPrice")}</Label><Input value={form.supplier_price} onChange={(e) => set("supplier_price", e.target.value)} placeholder="0.00" /></div>
       </div>
       <div><Label>Production Status</Label><Textarea value={form.production_status} onChange={(e) => set("production_status", e.target.value)} placeholder="Current stage…" rows={2} /></div>
       <div><Label>Notes</Label><Textarea value={form.notes} onChange={(e) => set("notes", e.target.value)} placeholder="Additional notes…" rows={2} /></div>
@@ -1745,7 +1902,7 @@ function UpdateCard({ update }) {
         {update.materials_status && <div><label className="text-xs text-slate-500 uppercase tracking-wide">Materials</label><p className="font-medium text-slate-700">{MAT_LABEL[update.materials_status] || update.materials_status}</p></div>}
         {update.materials_arrival_date && <div><label className="text-xs text-slate-500 uppercase tracking-wide">Materials Arrival</label><p className="font-medium text-slate-700">{fmtDate(update.materials_arrival_date)}</p></div>}
         {update.estimated_finish_date && <div><label className="text-xs text-slate-500 uppercase tracking-wide">Est. Finish</label><p className="font-medium text-slate-700">{fmtDate(update.estimated_finish_date)}</p></div>}
-        {update.supplier_price && <div><label className="text-xs text-slate-500 uppercase tracking-wide">Price</label><p className="font-medium text-slate-700">${update.supplier_price}</p></div>}
+        {update.supplier_price && <div><label className="text-xs text-slate-500 uppercase tracking-wide">Price</label><p className="font-medium text-slate-700">¥{update.supplier_price}</p></div>}
       </div>
       {update.production_status && <div><label className="text-xs text-slate-500 uppercase tracking-wide">Production Status</label><p className="text-sm text-slate-700 mt-0.5">{update.production_status}</p></div>}
       {update.notes && <div><label className="text-xs text-slate-500 uppercase tracking-wide">Notes</label><p className="text-sm text-slate-700 mt-0.5">{update.notes}</p></div>}
@@ -1769,13 +1926,13 @@ function DevChat({ devId, dev, setDevs, currentUser }) {
   const isSupplier = currentUser?.role === "supplier";
   const isAdmin    = currentUser?.role === "admin";
 
-  // Mark messages as read when chat is opened (only for non-admin)
+  // Mark messages as read when chat is opened OR when new messages arrive while chat is open (non-admin only)
   useEffect(() => {
     if (isAdmin) return;
     db.markMessagesRead(devId, currentUser?.full_name).then(() => {
       db.getDevs().then(setDevs);
     });
-  }, [devId]);
+  }, [devId, messages.length]);
 
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages.length]);
 
@@ -1797,7 +1954,7 @@ function DevChat({ devId, dev, setDevs, currentUser }) {
     <div className="flex flex-col" style={{ minHeight: 280 }}>
       <div className="flex-1 overflow-y-auto p-4 space-y-3 max-h-72">
         {messages.length === 0
-          ? <p className="text-center text-slate-400 text-sm py-8">No messages yet. Start the conversation!</p>
+          ? <p className="text-center text-slate-400 text-sm py-8">{t("noMessages")}</p>
           : messages.map((msg) => {
               const isOwn = msg.sender_name === currentUser?.full_name;
               // Read receipt: message is "read" if a non-admin from the other side has read it
@@ -1833,7 +1990,7 @@ function DevChat({ devId, dev, setDevs, currentUser }) {
       <div className="border-t border-slate-100 p-3 flex gap-2">
         <textarea value={text} onChange={(e) => setText(e.target.value)}
           onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } }}
-          placeholder="Type a message… (Enter to send)" rows={2}
+          placeholder={t("typeMessage")} rows={2}
           className="flex-1 px-3 py-2 border border-slate-200 rounded-xl text-sm resize-none focus:outline-none focus:border-amber-500" />
         <button onClick={send} disabled={!text.trim()}
           className="px-4 py-2 bg-slate-800 hover:bg-slate-900 text-white rounded-xl text-sm font-medium disabled:opacity-40 flex items-center gap-1.5">
