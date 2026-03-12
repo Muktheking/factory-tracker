@@ -172,6 +172,18 @@ const SUPABASE_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFz
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON);
 
 // ─────────────────────────────────────────────────────────────────────────────
+// STORAGE UPLOAD — uploads image to Supabase Storage, returns public URL
+// ─────────────────────────────────────────────────────────────────────────────
+async function uploadImage(file) {
+  const ext = file.name.split(".").pop() || "jpg";
+  const path = `${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`;
+  const { error } = await supabase.storage.from("photos").upload(path, file, { upsert: false });
+  if (error) throw error;
+  const { data } = supabase.storage.from("photos").getPublicUrl(path);
+  return data.publicUrl;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // WeCom Backend
 // ─────────────────────────────────────────────────────────────────────────────
 const BACKEND_URL = "";
@@ -373,16 +385,27 @@ function EmptyState({ icon, title, subtitle, action }) {
 }
 
 function PhotoUpload({ url, onChange, label = "Photo", small }) {
-  const handleFile = (e) => {
+  const [uploading, setUploading] = useState(false);
+  const handleFile = async (e) => {
     const f = e.target.files?.[0]; if (!f) return;
-    const reader = new FileReader();
-    reader.onload = (ev) => onChange(ev.target.result);
-    reader.readAsDataURL(f);
+    setUploading(true);
+    try {
+      const publicUrl = await uploadImage(f);
+      onChange(publicUrl);
+    } catch (err) {
+      alert("Upload failed: " + (err.message || err));
+    } finally {
+      setUploading(false);
+    }
   };
   return (
     <div>
       <Label>{label}</Label>
-      {url ? (
+      {uploading ? (
+        <div className={`flex flex-col items-center justify-center border-2 border-dashed border-amber-300 rounded-xl bg-amber-50 ${small ? "h-28" : "h-40"}`}>
+          <div className="text-amber-600 text-sm font-medium animate-pulse">Uploading…</div>
+        </div>
+      ) : url ? (
         <div className="relative rounded-xl overflow-hidden">
           <img src={url} alt="" className={`w-full object-cover ${small ? "h-32" : "h-48"}`} />
           <label className="absolute bottom-2 right-2 cursor-pointer">
@@ -1425,12 +1448,16 @@ function VisitForm({ visit, factories, currentUser, onSave, onCancel }) {
 
   const set = (key, val) => setForm((p) => ({ ...p, [key]: val }));
 
-  const addImages = (e) => {
-    Array.from(e.target.files || []).forEach((file) => {
-      const reader = new FileReader();
-      reader.onload = (ev) => setForm((p) => ({ ...p, additional_pictures: [...p.additional_pictures, ev.target.result] }));
-      reader.readAsDataURL(file);
-    });
+  const addImages = async (e) => {
+    const files = Array.from(e.target.files || []);
+    for (const file of files) {
+      try {
+        const url = await uploadImage(file);
+        setForm((p) => ({ ...p, additional_pictures: [...p.additional_pictures, url] }));
+      } catch (err) {
+        alert("Upload failed: " + (err.message || err));
+      }
+    }
   };
 
   const handleFactoryChange = (id) => {
@@ -1893,12 +1920,16 @@ function DevForm({ dev, factories, users, currentUser, onSave, onCancel }) {
     else { set("factory_ids", form.factory_ids.filter((id) => id !== fac.id)); set("factory_names", form.factory_names.filter((n) => n !== fac.name)); }
   };
 
-  const addImages = (e) => {
-    Array.from(e.target.files || []).forEach((file) => {
-      const reader = new FileReader();
-      reader.onload = (ev) => setForm((p) => ({ ...p, additional_pictures: [...(p.additional_pictures || []), ev.target.result] }));
-      reader.readAsDataURL(file);
-    });
+  const addImages = async (e) => {
+    const files = Array.from(e.target.files || []);
+    for (const file of files) {
+      try {
+        const url = await uploadImage(file);
+        setForm((p) => ({ ...p, additional_pictures: [...(p.additional_pictures || []), url] }));
+      } catch (err) {
+        alert("Upload failed: " + (err.message || err));
+      }
+    }
   };
 
   const valid = form.title && form.factory_ids.length > 0;
@@ -2191,12 +2222,16 @@ function FactoryUpdateForm({ dev, onSave, onCancel }) {
   });
 
   const set = (key, val) => setForm((p) => ({ ...p, [key]: val }));
-  const addImages = (e) => {
-    Array.from(e.target.files || []).forEach((file) => {
-      const reader = new FileReader();
-      reader.onload = (ev) => setForm((p) => ({ ...p, progress_pictures: [...p.progress_pictures, ev.target.result] }));
-      reader.readAsDataURL(file);
-    });
+  const addImages = async (e) => {
+    const files = Array.from(e.target.files || []);
+    for (const file of files) {
+      try {
+        const url = await uploadImage(file);
+        setForm((p) => ({ ...p, progress_pictures: [...p.progress_pictures, url] }));
+      } catch (err) {
+        alert("Upload failed: " + (err.message || err));
+      }
+    }
   };
 
   return (
