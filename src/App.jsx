@@ -1523,6 +1523,7 @@ function useReverseGeocode(lat, lon, existingAddress) {
 
 function VisitDetailPage({ visitId, visits, setVisits, factories, onBack, currentUser, showToast, askConfirm }) {
   const [showEdit, setShowEdit] = useState(false);
+  const [lightbox, setLightbox] = useState(null);
   const visit = visits.find((v) => v.id === visitId);
   const resolvedAddress = useReverseGeocode(visit?.latitude, visit?.longitude, visit?.location_address);
   if (!visit) return null;
@@ -1578,7 +1579,7 @@ function VisitDetailPage({ visitId, visits, setVisits, factories, onBack, curren
             <div className="lg:col-span-2 space-y-4">
               {visit.picture_url && (
                 <Card className="overflow-hidden shadow-sm">
-                  <img src={visit.picture_url} alt="Main" className="w-full object-cover max-h-80" />
+                  <img src={visit.picture_url} alt="Main" className="w-full object-cover max-h-80 cursor-pointer hover:opacity-90 transition-opacity" onClick={() => setLightbox(visit.picture_url)} />
                 </Card>
               )}
               {visit.additional_pictures?.length > 0 && (
@@ -1587,11 +1588,17 @@ function VisitDetailPage({ visitId, visits, setVisits, factories, onBack, curren
                   <div className="grid grid-cols-3 gap-2">
                     {visit.additional_pictures.map((p, i) => (
                       <div key={i} className="aspect-square rounded-xl overflow-hidden">
-                        <img src={p} alt="" className="w-full h-full object-cover cursor-pointer hover:opacity-90" onClick={() => window.open(p, "_blank")} />
+                        <img src={p} alt="" className="w-full h-full object-cover cursor-pointer hover:opacity-90 transition-opacity" onClick={() => setLightbox(p)} />
                       </div>
                     ))}
                   </div>
                 </Card>
+              )}
+              {lightbox && (
+                <div className="fixed inset-0 z-50 bg-black/90 flex items-center justify-center p-4" onClick={() => setLightbox(null)}>
+                  <img src={lightbox} alt="" className="max-w-full max-h-full object-contain rounded-xl shadow-2xl" onClick={e => e.stopPropagation()} />
+                  <button onClick={() => setLightbox(null)} className="absolute top-4 right-4 w-10 h-10 rounded-full bg-white/20 hover:bg-white/30 text-white flex items-center justify-center text-xl transition-colors">✕</button>
+                </div>
               )}
             </div>
             <div className="space-y-4">
@@ -2236,6 +2243,7 @@ function FactoryUpdateForm({ dev, onSave, onCancel }) {
 }
 
 function UpdateCard({ update }) {
+  const [lightbox, setLightbox] = useState(null);
   return (
     <div className="border border-slate-100 rounded-xl p-4 space-y-2">
       <div className="flex items-center justify-between flex-wrap gap-2">
@@ -2260,9 +2268,15 @@ function UpdateCard({ update }) {
         <div className="grid grid-cols-4 gap-1.5 mt-2">
           {update.progress_pictures.map((p, i) => (
             <div key={i} className="rounded aspect-square overflow-hidden">
-              <img src={p} alt="" className="w-full h-full object-cover cursor-pointer" onClick={() => window.open(p, "_blank")} />
+              <img src={p} alt="" className="w-full h-full object-cover cursor-pointer hover:opacity-90 transition-opacity" onClick={() => setLightbox(p)} />
             </div>
           ))}
+        </div>
+      )}
+      {lightbox && (
+        <div className="fixed inset-0 z-50 bg-black/90 flex items-center justify-center p-4" onClick={() => setLightbox(null)}>
+          <img src={lightbox} alt="" className="max-w-full max-h-full object-contain rounded-xl shadow-2xl" onClick={e => e.stopPropagation()} />
+          <button onClick={() => setLightbox(null)} className="absolute top-4 right-4 w-10 h-10 rounded-full bg-white/20 hover:bg-white/30 text-white flex items-center justify-center text-xl transition-colors">✕</button>
         </div>
       )}
     </div>
@@ -2604,9 +2618,9 @@ function UsersPage({ users, setUsers, factories, currentUser, showToast, askConf
           </div>
           <div className="grid grid-cols-3 gap-3">
             {[
-              { label: lang === "zh" ? "管理员" : "Admins",   count: users.filter(u => u.role === "admin").length,    color: "bg-purple-500/20 border-purple-500/30", text: "text-purple-200" },
-              { label: lang === "zh" ? "用户" : "Users",      count: users.filter(u => u.role === "user").length,     color: "bg-blue-500/20 border-blue-500/30",   text: "text-blue-200" },
-              { label: lang === "zh" ? "供应商" : "Suppliers", count: users.filter(u => u.role === "supplier").length, color: "bg-orange-500/20 border-orange-500/30", text: "text-orange-200" },
+              { label: "Admins",    count: users.filter(u => u.role === "admin").length,    color: "bg-purple-500/20 border-purple-500/30", text: "text-purple-200" },
+              { label: "Users",     count: users.filter(u => u.role === "user").length,     color: "bg-blue-500/20 border-blue-500/30",     text: "text-blue-200" },
+              { label: "Suppliers", count: users.filter(u => u.role === "supplier").length, color: "bg-orange-500/20 border-orange-500/30", text: "text-orange-200" },
             ].map(({ label, count, color, text }) => (
               <div key={label} className={`rounded-xl p-4 border ${color}`}>
                 <p className="text-2xl font-bold text-white">{count}</p>
