@@ -487,13 +487,17 @@ export default function App() {
     showToast(res.ok ? `✅ Reminder sent` : `⚠ ${res.error}`, res.ok ? "ok" : "error");
   }
 
+  const role = currentUser?.role || "user";
+  const isAdmin = role === "admin";
+  const isSupplier = role === "supplier";
+
   const navItems = [
     { id: "dashboard",    icon: Icon.grid,      label: "Dashboard" },
-    { id: "visits",       icon: Icon.clipboard, label: "Visits" },
+    !isSupplier && { id: "visits", icon: Icon.clipboard, label: "Visits" },
     { id: "developments", icon: Icon.flask,     label: "Dev" },
-    { id: "factories",    icon: Icon.building,  label: "Factories" },
-    { id: "users",        icon: Icon.users,     label: "Users" },
-  ];
+    !isSupplier && { id: "factories", icon: Icon.building, label: "Factories" },
+    isAdmin && { id: "users", icon: Icon.users, label: "Users" },
+  ].filter(Boolean);
 
   function goPage(id) { setDetail(null); setPage(id); }
 
@@ -520,19 +524,28 @@ export default function App() {
         onBack={() => setDetail(null)} currentUser={currentUser} showToast={showToast} askConfirm={askConfirm} />
     );
   } else if (page === "dashboard") {
+    const dashVisits = isAdmin ? visits : visits.filter(v => v.visitor_name === currentUser?.full_name);
+    const dashDevs   = isAdmin ? devs   : isSupplier
+      ? devs.filter(d => d.factory_ids?.includes(currentUser?.factory_id))
+      : devs.filter(d => d.team_member_id === currentUser?.id);
+    const dashFollowUp = needsFollowUp.filter(d => dashDevs.find(x => x.id === d.id));
     content = (
-      <DashboardPage visits={visits} devs={devs} factories={factories} setPage={goPage}
-        needsFollowUp={needsFollowUp} onViewDev={(id) => setDetail({ type: "dev", id })}
-        onViewVisit={(id) => setDetail({ type: "visit", id })} />
+      <DashboardPage visits={dashVisits} devs={dashDevs} factories={factories} setPage={goPage}
+        needsFollowUp={dashFollowUp} onViewDev={(id) => setDetail({ type: "dev", id })}
+        onViewVisit={(id) => setDetail({ type: "visit", id })} currentUser={currentUser} />
     );
   } else if (page === "visits") {
+    const filteredVisits = isAdmin ? visits : visits.filter(v => v.visitor_name === currentUser?.full_name);
     content = (
-      <VisitsPage visits={visits} setVisits={setVisits} factories={factories} currentUser={currentUser}
+      <VisitsPage visits={filteredVisits} setVisits={setVisits} factories={factories} currentUser={currentUser}
         onView={(id) => setDetail({ type: "visit", id })} showToast={showToast} askConfirm={askConfirm} />
     );
   } else if (page === "developments") {
+    const filteredDevs = isAdmin ? devs : isSupplier
+      ? devs.filter(d => d.factory_ids?.includes(currentUser?.factory_id))
+      : devs.filter(d => d.team_member_id === currentUser?.id);
     content = (
-      <DevelopmentsPage devs={devs} setDevs={setDevs} factories={factories} users={users}
+      <DevelopmentsPage devs={filteredDevs} setDevs={setDevs} factories={factories} users={users}
         currentUser={currentUser} onView={(id) => setDetail({ type: "dev", id })}
         showToast={showToast} onNotify={notifyFactory} askConfirm={askConfirm} />
     );
@@ -598,17 +611,19 @@ export default function App() {
 // ─────────────────────────────────────────────────────────────────────────────
 // Dashboard
 // ─────────────────────────────────────────────────────────────────────────────
-function DashboardPage({ visits, devs, factories, setPage, needsFollowUp, onViewDev, onViewVisit }) {
+function DashboardPage({ visits, devs, factories, setPage, needsFollowUp, onViewDev, onViewVisit, currentUser }) {
+  const isAdmin = currentUser?.role === "admin";
+  const isSupplier = currentUser?.role === "supplier";
   const recentVisits = [...visits].sort((a, b) => new Date(b.visit_date) - new Date(a.visit_date)).slice(0, 3);
   const recentDevs   = [...devs].sort((a, b) => new Date(b.created_date) - new Date(a.created_date)).slice(0, 3);
   const openCount    = devs.filter((d) => d.status === "open" || d.status === "in_progress").length;
 
   const stats = [
-    { label: "Total Visits",    value: visits.length,        color: "blue" },
+    !isSupplier && { label: "Total Visits",    value: visits.length,        color: "blue" },
     { label: "Active Devs",     value: openCount,            color: "amber" },
-    { label: "Factories",       value: factories.length,     color: "emerald" },
+    isAdmin && { label: "Factories",       value: factories.length,     color: "emerald" },
     { label: "Needs Follow-up", value: needsFollowUp.length, color: needsFollowUp.length > 0 ? "red" : "slate" },
-  ];
+  ].filter(Boolean);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100">
@@ -635,7 +650,7 @@ function DashboardPage({ visits, devs, factories, setPage, needsFollowUp, onView
           </div>
         )}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <div>
+          {!isSupplier && <div>
             <div className="flex items-center justify-between mb-3">
               <h2 className="text-lg font-semibold text-slate-800">Recent Visits</h2>
               <button onClick={() => setPage("visits")} className="text-sm text-amber-600 font-medium hover:underline">View all</button>
@@ -666,7 +681,7 @@ function DashboardPage({ visits, devs, factories, setPage, needsFollowUp, onView
                   </Card>
                 ))}
             </div>
-          </div>
+          </div>}
           <div>
             <div className="flex items-center justify-between mb-3">
               <h2 className="text-lg font-semibold text-slate-800">Recent Developments</h2>
