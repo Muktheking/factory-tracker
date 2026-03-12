@@ -614,10 +614,10 @@ export default function App() {
 function DashboardPage({ visits, devs, factories, setPage, needsFollowUp, onViewDev, onViewVisit, currentUser }) {
   const isAdmin = currentUser?.role === "admin";
   const isSupplier = currentUser?.role === "supplier";
-  const [bannerTab, setBannerTab] = React.useState("visits");
-  const timerRef = React.useRef(null);
+  const [bannerTab, setBannerTab] = useState("visits");
+  const timerRef = useRef(null);
 
-  React.useEffect(() => {
+  useEffect(() => {
     if (isSupplier) return;
     timerRef.current = setInterval(() => {
       setBannerTab(t => t === "visits" ? "devs" : "visits");
