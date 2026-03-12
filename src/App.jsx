@@ -1593,6 +1593,12 @@ function DevelopmentsPage({ devs, setDevs, factories, users, currentUser, onView
   const [filterFactory, setFilterFactory] = useState("all");
   const isAdmin = currentUser?.role === "admin";
 
+  const [filterUser, setFilterUser] = useState("all");
+  const allUsers = [...new Set(devs.map(d => d.team_member_name).filter(Boolean))];
+
+  // Factory-aware stats
+  const factoryDevs = filterFactory === "all" ? devs : devs.filter(d => d.factory_ids?.includes(filterFactory));
+
   const filtered = devs
     .filter((d) => {
       if (tab === "completed") return d.status === "completed" || d.status === "cancelled";
@@ -1607,12 +1613,6 @@ function DevelopmentsPage({ devs, setDevs, factories, users, currentUser, onView
       if (sortBy === "user") return (a.team_member_name || "").localeCompare(b.team_member_name || "");
       return new Date(b.created_date) - new Date(a.created_date);
     });
-
-  const [filterUser, setFilterUser] = useState("all");
-  const allUsers = [...new Set(devs.map(d => d.team_member_name).filter(Boolean))];
-
-  // Factory-aware stats
-  const factoryDevs = filterFactory === "all" ? devs : devs.filter(d => d.factory_ids?.includes(filterFactory));
   const openCount = factoryDevs.filter((d) => d.status === "open" || d.status === "in_progress").length;
   const doneCount = factoryDevs.filter((d) => d.status === "completed").length;
 
