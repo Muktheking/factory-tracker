@@ -265,7 +265,7 @@ const db = {
       messages: (messages || []).filter(m => m.development_id === d.id),
     }));
   },
-  async upsertDev(d)            { const { data } = await supabase.from("developments").upsert(d).select().single(); return data; },
+  async upsertDev(d)            { const { data, error } = await supabase.from("developments").upsert(d).select().single(); if (error) { alert("Save failed: " + error.message); } return data; },
   async deleteDev(id)           { await supabase.from("developments").delete().eq("id", id); },
   async insertUpdate(u)         { const { data } = await supabase.from("development_updates").insert(u).select().single(); return data; },
   async insertMessage(m)        { const { data } = await supabase.from("development_messages").insert(m).select().single(); return data; },
@@ -284,7 +284,7 @@ const db = {
 
   // VISITS
   async getVisits()             { const { data } = await supabase.from("visits").select("*").order("visit_date", { ascending: false }); return data || []; },
-  async upsertVisit(v)          { const { data } = await supabase.from("visits").upsert(v).select().single(); return data; },
+  async upsertVisit(v)          { const { data, error } = await supabase.from("visits").upsert(v).select().single(); if (error) { alert("Save failed: " + error.message); } return data; },
   async deleteVisit(id)         { await supabase.from("visits").delete().eq("id", id); },
 };
 
@@ -1041,8 +1041,8 @@ export default function App() {
               const active = !detail && page === item.id;
               return (
                 <button key={item.id} onClick={() => goPage(item.id)}
-                  className={`flex items-center gap-1.5 px-4 py-2.5 transition-all text-xs font-medium whitespace-nowrap flex-shrink-0 border-b-2 ${
-                    active ? "border-amber-500 text-amber-400" : "border-transparent text-slate-400 hover:text-white hover:border-white/30"
+                  className={`flex items-center gap-1.5 px-4 py-2.5 transition-all text-xs font-medium whitespace-nowrap flex-shrink-0 ${
+                    active ? "border-b-2 border-amber-500 text-amber-400" : "text-slate-400 hover:text-white"
                   }`}>
                   {item.icon}<span>{item.label}</span>
                 </button>
