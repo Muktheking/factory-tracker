@@ -282,9 +282,9 @@ const Icon = {
   eye:       <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>,
   edit:      <svg width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>,
   trash:     <svg width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6M9 6V4h6v2"/></svg>,
-  building:  <img src={FACTORY_ICON_SRC} alt="factory" style={{width:18,height:18,objectFit:"contain",display:"inline-block",verticalAlign:"middle"}} />,
+  building:  <svg width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><rect x="2" y="7" width="20" height="14" rx="1"/><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/><path d="M9 21v-4h6v4"/></svg>,
   users:     <svg width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>,
-  flask:     <img src={DEV_ICON_SRC} alt="dev" style={{width:18,height:18,objectFit:"contain",display:"inline-block",verticalAlign:"middle"}} />,
+  flask:     <svg width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><path d="M9 3h6v5l4 9H5l4-9V3z"/><path d="M6 14h12"/></svg>,
   clipboard: <svg width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><rect x="8" y="2" width="8" height="4" rx="1" ry="1"/></svg>,
   grid:      <svg width="18" height="18" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>,
   pin:       <svg width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>,
@@ -1713,12 +1713,12 @@ function DevelopmentsPage({ devs, setDevs, factories, users, currentUser, onView
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-purple-50/20">
-      <div style={{background:"linear-gradient(to right, #1e293b, #334155)",color:"white"}}>
+      <div className="bg-slate-800 text-white">
         <div className="max-w-5xl mx-auto px-4 sm:px-6 py-6">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
             <div>
               <h1 className="text-3xl font-bold">{t("dev")}</h1>
-              <p style={{color:"#cbd5e1"}} className="mt-1 text-sm">Track product development requests</p>
+              <p className="text-slate-400 mt-1 text-sm">Track product development requests</p>
             </div>
             {!isSupplier && (
               <Btn variant="purple" size="lg" onClick={() => { setEditingDev(null); setShowForm(true); }}>
@@ -2565,12 +2565,26 @@ function UsersPage({ users, setUsers, factories, currentUser, showToast, askConf
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100">
       <div className="bg-slate-800 text-white">
-        <div className="max-w-5xl mx-auto px-4 sm:px-6 py-6 flex items-center justify-between gap-4">
-          <div className="flex items-center gap-4">
-            <div className="w-12 h-12 rounded-xl bg-amber-500/20 flex items-center justify-center">{Icon.users}</div>
-            <div><h1 className="text-3xl font-bold">User Management</h1><p className="text-slate-400 mt-1 text-sm">Manage users, roles, and supplier assignments</p></div>
+        <div className="max-w-5xl mx-auto px-4 sm:px-6 py-6">
+          <div className="flex items-center justify-between gap-4 mb-6">
+            <div className="flex items-center gap-4">
+              <div className="w-12 h-12 rounded-xl bg-amber-500/20 flex items-center justify-center">{Icon.users}</div>
+              <div><h1 className="text-3xl font-bold">User Management</h1><p className="text-slate-400 mt-1 text-sm">Manage users, roles, and supplier assignments</p></div>
+            </div>
+            {!notAdmin && <Btn variant="amber" onClick={() => setShowAddUser(s => !s)}>{Icon.plus} {t("addUser")}</Btn>}
           </div>
-          {!notAdmin && <Btn variant="amber" onClick={() => setShowAddUser(s => !s)}>{Icon.plus} {t("addUser")}</Btn>}
+          <div className="grid grid-cols-3 gap-3">
+            {[
+              { label: lang === "zh" ? "管理员" : "Admins",   count: users.filter(u => u.role === "admin").length,    color: "bg-purple-500/20 border-purple-500/30", text: "text-purple-200" },
+              { label: lang === "zh" ? "用户" : "Users",      count: users.filter(u => u.role === "user").length,     color: "bg-blue-500/20 border-blue-500/30",   text: "text-blue-200" },
+              { label: lang === "zh" ? "供应商" : "Suppliers", count: users.filter(u => u.role === "supplier").length, color: "bg-orange-500/20 border-orange-500/30", text: "text-orange-200" },
+            ].map(({ label, count, color, text }) => (
+              <div key={label} className={`rounded-xl p-4 border ${color}`}>
+                <p className="text-2xl font-bold text-white">{count}</p>
+                <p className={`text-xs mt-0.5 ${text}`}>{label}</p>
+              </div>
+            ))}
+          </div>
         </div>
       </div>
       <div className="max-w-5xl mx-auto px-4 sm:px-6 py-6">
