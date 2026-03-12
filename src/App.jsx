@@ -1085,7 +1085,7 @@ function DashboardPage({ visits, devs, factories, setPage, needsFollowUp, dueSoo
   ].filter(Boolean);
 
   return (
-    <div className="min-h-screen bg-slate-800">
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100">
       <div className="bg-slate-800 text-white">
         <div className="max-w-5xl mx-auto px-4 sm:px-6 py-4">
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
@@ -1099,7 +1099,6 @@ function DashboardPage({ visits, devs, factories, setPage, needsFollowUp, dueSoo
           </div>
         </div>
       </div>
-      <div className="bg-gradient-to-br from-slate-50 to-slate-100">
       <div className="max-w-5xl mx-auto px-4 sm:px-6 py-6 space-y-6">
         {needsFollowUp.length > 0 && (
           <div className="bg-orange-50 border border-orange-200 rounded-2xl p-4 flex items-center gap-3">
@@ -1238,7 +1237,6 @@ function DashboardPage({ visits, devs, factories, setPage, needsFollowUp, dueSoo
             </div>
           </div>
         )}
-      </div>
       </div>
     </div>
   );
