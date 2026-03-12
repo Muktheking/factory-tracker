@@ -55,6 +55,18 @@ const db = {
   async deleteDev(id)           { await supabase.from("developments").delete().eq("id", id); },
   async insertUpdate(u)         { const { data } = await supabase.from("development_updates").insert(u).select().single(); return data; },
   async insertMessage(m)        { const { data } = await supabase.from("development_messages").insert(m).select().single(); return data; },
+  async markMessagesRead(devId, userName) {
+    // Get all messages in this dev not sent by user and not yet read by them
+    const { data: msgs } = await supabase.from("development_messages")
+      .select("id, read_by").eq("development_id", devId);
+    if (!msgs) return;
+    for (const msg of msgs) {
+      const readBy = msg.read_by || [];
+      if (!readBy.includes(userName)) {
+        await supabase.from("development_messages").update({ read_by: [...readBy, userName] }).eq("id", msg.id);
+      }
+    }
+  },
 
   // VISITS
   async getVisits()             { const { data } = await supabase.from("visits").select("*").order("visit_date", { ascending: false }); return data || []; },
@@ -395,6 +407,7 @@ function LoginScreen({ onLogin }) {
 export default function App() {
   const [session, setSession]     = useState(undefined); // undefined = checking, null = logged out
   const [loading, setLoading]     = useState(true);
+  const initialLoadDone = useRef(false);
   const [dbError, setDbError]     = useState(null);
   const [page, setPage]           = useState("dashboard");
   const [factories, setFactories] = useState([]);
@@ -417,12 +430,13 @@ export default function App() {
   // 2. Load data once we have a session
   useEffect(() => {
     if (!session) return;
-    setLoading(true);
+    if (!initialLoadDone.current) setLoading(true);
     (async () => {
       try {
         const [f, u, d, v] = await Promise.all([db.getFactories(), db.getUsers(), db.getDevs(), db.getVisits()]);
         setFactories(f); setUsers(u); setDevs(d); setVisits(v);
         setLoading(false);
+        initialLoadDone.current = true;
       } catch (e) {
         setDbError(e.message || String(e));
         setLoading(false);
@@ -434,12 +448,12 @@ export default function App() {
   useEffect(() => {
     if (!session || loading || dbError) return;
     const ch = supabase.channel("realtime-all")
-      .on("postgres_changes", { event: "*", schema: "public", table: "factories" }, async () => { setFactories(await db.getFactories()); })
-      .on("postgres_changes", { event: "*", schema: "public", table: "users" }, async () => { setUsers(await db.getUsers()); })
-      .on("postgres_changes", { event: "*", schema: "public", table: "developments" }, async () => { setDevs(await db.getDevs()); })
-      .on("postgres_changes", { event: "*", schema: "public", table: "development_updates" }, async () => { setDevs(await db.getDevs()); })
-      .on("postgres_changes", { event: "*", schema: "public", table: "development_messages" }, async () => { setDevs(await db.getDevs()); })
-      .on("postgres_changes", { event: "*", schema: "public", table: "visits" }, async () => { setVisits(await db.getVisits()); })
+      .on("postgres_changes", { event: "*", schema: "public", table: "factories" }, () => { db.getFactories().then(setFactories); })
+      .on("postgres_changes", { event: "*", schema: "public", table: "users" }, () => { db.getUsers().then(setUsers); })
+      .on("postgres_changes", { event: "*", schema: "public", table: "developments" }, () => { db.getDevs().then(setDevs); })
+      .on("postgres_changes", { event: "*", schema: "public", table: "development_updates" }, () => { db.getDevs().then(setDevs); })
+      .on("postgres_changes", { event: "*", schema: "public", table: "development_messages" }, () => { db.getDevs().then(setDevs); })
+      .on("postgres_changes", { event: "*", schema: "public", table: "visits" }, () => { db.getVisits().then(setVisits); })
       .subscribe();
     return () => supabase.removeChannel(ch);
   }, [session, loading, dbError]);
@@ -1403,7 +1417,7 @@ function DevForm({ dev, factories, users, currentUser, onSave, onCancel }) {
         <p className="text-xs font-semibold text-amber-700 uppercase tracking-wide">Internal Info (not visible to suppliers)</p>
         <div className="grid grid-cols-2 gap-4">
           <div><Label>Target Date</Label><Input type="date" value={form.internal_estimated_date} onChange={(e) => set("internal_estimated_date", e.target.value)} /></div>
-          <div><Label>Target Price (USD)</Label><Input type="number" value={form.internal_estimated_price} onChange={(e) => set("internal_estimated_price", e.target.value)} placeholder="0.00" /></div>
+          <div><Label>Target Price (RMB ¥)</Label><Input type="number" value={form.internal_estimated_price} onChange={(e) => set("internal_estimated_price", e.target.value)} placeholder="0.00" /></div>
         </div>
       </div>
       <div>
@@ -1449,7 +1463,14 @@ function DevDetailPage({ devId, devs, setDevs, factories, getFactory, getUser, o
   const [activeTab, setActiveTab]         = useState("updates");
   const dev = devs.find((d) => d.id === devId);
   if (!dev) return null;
-  const isAdmin = currentUser?.role === "admin";
+  const isAdmin    = currentUser?.role === "admin";
+  const isSupplier = currentUser?.role === "supplier";
+
+  // Unread messages: messages not sent by current user and not read by them
+  const unreadCount = (dev.messages || []).filter(m =>
+    m.sender_name !== currentUser?.full_name &&
+    !(m.read_by || []).includes(currentUser?.full_name)
+  ).length;
 
   async function changeStatus(status) {
     await db.upsertDev({ ...dev, status, updates: undefined, messages: undefined });
@@ -1542,7 +1563,12 @@ function DevDetailPage({ devId, devs, setDevs, factories, getFactory, getUser, o
                 <div className="flex border-b border-slate-100">
                   {[["updates", "Factory Updates"], ["chat", "Chat"]].map(([v, label]) => (
                     <button key={v} onClick={() => setActiveTab(v)}
-                      className={`flex-1 py-3 text-sm font-medium transition-colors ${activeTab === v ? "text-purple-600 border-b-2 border-purple-500" : "text-slate-500 hover:text-slate-700"}`}>{label}</button>
+                      className={`flex-1 py-3 text-sm font-medium transition-colors relative ${activeTab === v ? "text-purple-600 border-b-2 border-purple-500" : "text-slate-500 hover:text-slate-700"}`}>
+                      {label}
+                      {v === "chat" && unreadCount > 0 && (
+                        <span className="absolute top-2 right-[calc(50%-20px)] w-2.5 h-2.5 bg-red-500 rounded-full" />
+                      )}
+                    </button>
                   ))}
                 </div>
                 {activeTab === "updates" && (
@@ -1578,7 +1604,7 @@ function DevDetailPage({ devId, devs, setDevs, factories, getFactory, getUser, o
                   ))}
                 </div>
               </Card>
-              {(dev.internal_estimated_date || dev.internal_estimated_price) && (
+              {!isSupplier && (dev.internal_estimated_date || dev.internal_estimated_price) && (
                 <Card className="shadow-sm p-5 border-l-4 border-l-amber-400">
                   <h3 className="font-semibold text-amber-800 border-b border-amber-100 pb-2 mb-3 text-sm uppercase tracking-wide">🔒 Internal Info</h3>
                   <div className="space-y-3">
@@ -1588,29 +1614,49 @@ function DevDetailPage({ devId, devs, setDevs, factories, getFactory, getUser, o
                     )}
                     {dev.internal_estimated_price && (
                       <div><label className="text-xs text-amber-700 uppercase tracking-wide font-medium">Target Price</label>
-                        <p className="text-sm text-amber-900 mt-0.5">${dev.internal_estimated_price}</p></div>
+                        <p className="text-sm text-amber-900 mt-0.5">¥{dev.internal_estimated_price}</p></div>
                     )}
                   </div>
                 </Card>
               )}
-              <Card className="shadow-sm p-5">
-                <h3 className="font-semibold text-slate-800 border-b border-slate-100 pb-2 mb-3 text-sm uppercase tracking-wide">Factory Contacts</h3>
-                {dev.factory_ids?.map((fid) => {
-                  const fac = getFactory(fid);
-                  if (!fac) return null;
-                  return (
-                    <div key={fid} className="flex items-start gap-3 py-2">
-                      <div className="w-9 h-9 rounded-xl bg-amber-100 flex items-center justify-center text-amber-600 flex-shrink-0">{Icon.building}</div>
-                      <div>
-                        <p className="font-medium text-slate-800 text-sm">{fac.name}</p>
-                        <p className="text-xs text-slate-500">{fac.contact_person}</p>
-                        {fac.wechat_id ? <p className="text-xs text-green-600 font-mono mt-0.5 flex items-center gap-1">{Icon.wechat} {fac.wechat_id}</p>
-                          : <p className="text-xs text-red-400 mt-0.5">⚠ No WeChat ID</p>}
+              {isSupplier ? (
+                <Card className="shadow-sm p-5">
+                  <h3 className="font-semibold text-slate-800 border-b border-slate-100 pb-2 mb-3 text-sm uppercase tracking-wide">Seller Contact</h3>
+                  {(() => {
+                    const seller = getUser(dev.team_member_id);
+                    return seller ? (
+                      <div className="flex items-start gap-3 py-2">
+                        <div className="w-9 h-9 rounded-xl bg-blue-100 flex items-center justify-center text-blue-600 flex-shrink-0">{Icon.user}</div>
+                        <div>
+                          <p className="font-medium text-slate-800 text-sm">{seller.full_name}</p>
+                          {seller.email && <p className="text-xs text-slate-500 flex items-center gap-1 mt-0.5">{Icon.mail} {seller.email}</p>}
+                          {seller.wechat_id ? <p className="text-xs text-green-600 font-mono mt-0.5 flex items-center gap-1">{Icon.wechat} {seller.wechat_id}</p>
+                            : <p className="text-xs text-red-400 mt-0.5">⚠ No WeChat ID</p>}
+                        </div>
                       </div>
-                    </div>
-                  );
-                })}
-              </Card>
+                    ) : <p className="text-xs text-slate-400">No seller assigned</p>;
+                  })()}
+                </Card>
+              ) : (
+                <Card className="shadow-sm p-5">
+                  <h3 className="font-semibold text-slate-800 border-b border-slate-100 pb-2 mb-3 text-sm uppercase tracking-wide">Factory Contacts</h3>
+                  {dev.factory_ids?.map((fid) => {
+                    const fac = getFactory(fid);
+                    if (!fac) return null;
+                    return (
+                      <div key={fid} className="flex items-start gap-3 py-2">
+                        <div className="w-9 h-9 rounded-xl bg-amber-100 flex items-center justify-center text-amber-600 flex-shrink-0">{Icon.building}</div>
+                        <div>
+                          <p className="font-medium text-slate-800 text-sm">{fac.name}</p>
+                          <p className="text-xs text-slate-500">{fac.contact_person}</p>
+                          {fac.wechat_id ? <p className="text-xs text-green-600 font-mono mt-0.5 flex items-center gap-1">{Icon.wechat} {fac.wechat_id}</p>
+                            : <p className="text-xs text-red-400 mt-0.5">⚠ No WeChat ID</p>}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </Card>
+              )}
               {isAdmin && (
                 <Btn variant="danger" onClick={del} className="w-full justify-center">{Icon.trash} Delete Development</Btn>
               )}
@@ -1720,12 +1766,28 @@ function DevChat({ devId, dev, setDevs, currentUser }) {
   const messages = dev.messages || [];
   const [text, setText] = useState("");
   const bottomRef = useRef(null);
+  const isSupplier = currentUser?.role === "supplier";
+  const isAdmin    = currentUser?.role === "admin";
+
+  // Mark messages as read when chat is opened (only for non-admin)
+  useEffect(() => {
+    if (isAdmin) return;
+    db.markMessagesRead(devId, currentUser?.full_name).then(() => {
+      db.getDevs().then(setDevs);
+    });
+  }, [devId]);
 
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages.length]);
 
   async function send() {
     const trimmed = text.trim(); if (!trimmed) return;
-    const record = { id: genId("MSG"), development_id: devId, sender_name: currentUser?.full_name || "Unknown", sender_role: currentUser?.role || "user", message: trimmed };
+    const record = {
+      id: genId("MSG"), development_id: devId,
+      sender_name: currentUser?.full_name || "Unknown",
+      sender_role: currentUser?.role || "user",
+      message: trimmed,
+      read_by: [currentUser?.full_name],
+    };
     const saved = await db.insertMessage(record);
     if (saved) setDevs((p) => p.map((d) => d.id === devId ? { ...d, messages: [...(d.messages || []), saved] } : d));
     setText("");
@@ -1738,6 +1800,9 @@ function DevChat({ devId, dev, setDevs, currentUser }) {
           ? <p className="text-center text-slate-400 text-sm py-8">No messages yet. Start the conversation!</p>
           : messages.map((msg) => {
               const isOwn = msg.sender_name === currentUser?.full_name;
+              // Read receipt: message is "read" if a non-admin from the other side has read it
+              const readBy = msg.read_by || [];
+              const isReadByOther = isOwn && readBy.some(name => name !== currentUser?.full_name);
               return (
                 <div key={msg.id} className={`flex ${isOwn ? "justify-end" : "justify-start"}`}>
                   <div className={`max-w-[80%] rounded-2xl px-4 py-2.5 ${isOwn ? "bg-slate-800 text-white" : "bg-slate-100 text-slate-800"}`}>
@@ -1750,7 +1815,14 @@ function DevChat({ devId, dev, setDevs, currentUser }) {
                       </div>
                     )}
                     <p className="text-sm leading-relaxed">{msg.message}</p>
-                    <p className={`text-xs mt-1 opacity-60 ${isOwn ? "text-right" : ""}`}>{fmtDate(msg.created_date, true)}</p>
+                    <div className={`flex items-center gap-1 mt-1 ${isOwn ? "justify-end" : ""}`}>
+                      <p className={`text-xs opacity-60`}>{fmtDate(msg.created_date, true)}</p>
+                      {isOwn && (
+                        <span className={`text-xs ${isReadByOther ? "text-blue-400" : "opacity-40 text-white"}`}>
+                          {isReadByOther ? "✓✓" : "✓"}
+                        </span>
+                      )}
+                    </div>
                   </div>
                 </div>
               );
