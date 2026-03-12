@@ -1856,6 +1856,12 @@ function UsersPage({ users, setUsers, factories, currentUser, showToast, askConf
   const [editRole, setEditRole]   = useState("");
   const [editFactory, setEditFactory] = useState("");
   const [editWechat, setEditWechat]   = useState("");
+  const [showAddUser, setShowAddUser] = useState(false);
+  const [newName, setNewName]         = useState("");
+  const [newEmail, setNewEmail]       = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [newRole, setNewRole]         = useState("user");
+  const [addingUser, setAddingUser]   = useState(false);
   const notAdmin = currentUser?.role !== "admin";
 
   function startEdit(u) {
@@ -1882,12 +1888,39 @@ function UsersPage({ users, setUsers, factories, currentUser, showToast, askConf
     });
   }
 
+  async function addUser() {
+    if (!newName || !newEmail || !newPassword) { showToast("Please fill all fields", "error"); return; }
+    if (newPassword.length < 6) { showToast("Password must be at least 6 characters", "error"); return; }
+    setAddingUser(true);
+    const { error: signUpError } = await supabase.auth.signUp({
+      email: newEmail, password: newPassword, options: { data: { full_name: newName } }
+    });
+    if (signUpError) { showToast("Error: " + signUpError.message, "error"); setAddingUser(false); return; }
+    const newUser = { id: genId("U"), full_name: newName, email: newEmail, role: newRole };
+    const saved = await db.upsertUser(newUser);
+    if (saved) setUsers((p) => [...p, saved]);
+    setShowAddUser(false); setNewName(""); setNewEmail(""); setNewPassword(""); setNewRole("user");
+    setAddingUser(false);
+    showToast(`✓ User ${newName} created! They can now log in.`);
+  }
+
+  async function resetPassword(email) {
+    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: window.location.origin,
+    });
+    if (error) showToast("Error: " + error.message, "error");
+    else showToast(`Password reset email sent to ${email}`);
+  }
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100">
       <div className="bg-slate-800 text-white">
-        <div className="max-w-5xl mx-auto px-4 sm:px-6 py-6 flex items-center gap-4">
-          <div className="w-12 h-12 rounded-xl bg-amber-500/20 flex items-center justify-center">{Icon.users}</div>
-          <div><h1 className="text-3xl font-bold">User Management</h1><p className="text-slate-400 mt-1 text-sm">Manage users, roles, and supplier assignments</p></div>
+        <div className="max-w-5xl mx-auto px-4 sm:px-6 py-6 flex items-center justify-between gap-4">
+          <div className="flex items-center gap-4">
+            <div className="w-12 h-12 rounded-xl bg-amber-500/20 flex items-center justify-center">{Icon.users}</div>
+            <div><h1 className="text-3xl font-bold">User Management</h1><p className="text-slate-400 mt-1 text-sm">Manage users, roles, and supplier assignments</p></div>
+          </div>
+          {!notAdmin && <Btn variant="amber" onClick={() => setShowAddUser(s => !s)}>{Icon.plus} Add User</Btn>}
         </div>
       </div>
       <div className="max-w-5xl mx-auto px-4 sm:px-6 py-6">
@@ -1896,6 +1929,27 @@ function UsersPage({ users, setUsers, factories, currentUser, showToast, askConf
             <span className="text-orange-500 flex-shrink-0">{Icon.alert}</span>
             <p className="text-sm text-orange-800 font-medium">Read-only view. Only administrators can edit users.</p>
           </div>
+        )}
+        {showAddUser && !notAdmin && (
+          <Card className="shadow-lg mb-6 p-6">
+            <h3 className="font-semibold text-slate-800 mb-4 text-lg">Add New User</h3>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div><Label required>Full Name</Label><Input value={newName} onChange={e => setNewName(e.target.value)} placeholder="John Smith" /></div>
+              <div><Label required>Email</Label><Input type="email" value={newEmail} onChange={e => setNewEmail(e.target.value)} placeholder="john@company.com" /></div>
+              <div><Label required>Password</Label><Input type="password" value={newPassword} onChange={e => setNewPassword(e.target.value)} placeholder="Minimum 6 characters" /></div>
+              <div><Label>Role</Label>
+                <Select value={newRole} onChange={setNewRole}>
+                  <option value="admin">Admin</option>
+                  <option value="user">User</option>
+                  <option value="supplier">Supplier</option>
+                </Select>
+              </div>
+            </div>
+            <div className="flex justify-end gap-3 mt-4">
+              <Btn variant="outline" onClick={() => setShowAddUser(false)}>Cancel</Btn>
+              <Btn variant="dark" disabled={addingUser} onClick={addUser}>{addingUser ? "Creating..." : "Create User"}</Btn>
+            </div>
+          </Card>
         )}
         <Card className="shadow-lg overflow-hidden">
           <div className="p-5 border-b border-slate-100"><h2 className="font-semibold text-slate-800">All Users ({users.length})</h2></div>
@@ -1943,6 +1997,7 @@ function UsersPage({ users, setUsers, factories, currentUser, showToast, askConf
                         : !notAdmin && (
                           <div className="flex items-center justify-end gap-1">
                             <Btn variant="ghost" size="sm" onClick={() => startEdit(u)}>{Icon.edit} Edit</Btn>
+                            <Btn variant="ghost" size="sm" onClick={() => resetPassword(u.email)} className="text-blue-500 hover:text-blue-700" title="Send password reset email">🔑 Reset</Btn>
                             <Btn variant="ghost" size="sm" onClick={() => deleteUser(u.id)} className="text-red-500 hover:text-red-700">{Icon.trash}</Btn>
                           </div>
                         )}
