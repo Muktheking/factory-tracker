@@ -756,7 +756,7 @@ export default function App() {
     if (!session || !currentUser) return;
     const poll = async () => {
       try {
-        // Check for pending users (admin only)
+        // Polling only checks pending users — Realtime handles messages & devs
         if (currentUser?.role === "admin") {
           const allUsers = await db.getUsers();
           const pending = allUsers.filter(u => u.status === "pending");
@@ -772,53 +772,10 @@ export default function App() {
           }
           lastPendingRef.current = pending.length;
         }
-
-        const allDevs = await db.getDevs();
-        if (allDevs) {
-          // Track per-dev message counts to find exactly which dev got new messages
-          const myDevs = allDevs.filter(d =>
-            currentUser.role === "admin" ||
-            d.team_member_id === currentUser.id ||
-            (currentUser.role === "supplier" && d.factory_ids?.includes(currentUser.factory_id))
-          );
-          const prevCounts = lastMsgCountRef.current || {};
-          const newCounts = {};
-          myDevs.forEach(d => {
-            const msgs = d.messages || [];
-            newCounts[d.id] = msgs.length;
-            const prev = prevCounts[d.id];
-            if (prev !== undefined && msgs.length > prev) {
-              // Find the newest message not sent by current user
-              const newMsgs = msgs.slice(prev).filter(m => m.sender_name !== currentUser.full_name);
-              newMsgs.forEach(m => {
-                addNotification("newMsg", {
-                  sender: m.sender_name || "Someone",
-                  preview: m.message?.slice(0, 50) || "",
-                  devTitle: d.title || "",
-                }, d.id, "chat");
-              });
-            }
-          });
-          lastMsgCountRef.current = newCounts;
-
-          // Only admin gets notified of new developments from others
-          if (currentUser.role === "admin") {
-            const totalDevs = allDevs.length;
-            if (lastDevCountRef.current !== null && totalDevs > lastDevCountRef.current) {
-              const newest = allDevs.sort((a,b) => new Date(b.created_date)-new Date(a.created_date))[0];
-              if (newest && newest.team_member_id !== currentUser.id) {
-                addNotification("newDev", {title: newest.title || "", team: newest.team_member_name || ""}, newest.id, "dev");
-              }
-            }
-            lastDevCountRef.current = totalDevs;
-          } else {
-            lastDevCountRef.current = allDevs.length;
-          }
-          setDevs(allDevs);
-        }
       } catch(e) {}
     };
-    const interval = setInterval(poll, 5000); // poll every 5s
+    poll();
+    const interval = setInterval(poll, 60000); // poll every 60s — lightweight, only checks pending users
     return () => clearInterval(interval);
   }, [session, currentUser]);
 
