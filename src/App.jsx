@@ -873,16 +873,10 @@ function VisitForm({ visit, factories, currentUser, onSave, onCancel }) {
       async (pos) => {
         const { latitude, longitude } = pos.coords;
         try {
-          const res = await fetch(`https://nominatim.openstreetmap.org/reverse?lat=${latitude}&lon=${longitude}&format=json&addressdetails=1`, { headers: { "Accept-Language": "en" } });
+          const res = await fetch(`https://restapi.amap.com/v3/geocode/regeo?key=a3fa54b4926b09660455bbb6c286c12a&location=${longitude},${latitude}&radius=100&extensions=base&batch=false`);
           const data = await res.json();
-          const addr = data.address || {};
-          const readable = [
-            addr.road || addr.pedestrian || addr.street,
-            addr.suburb || addr.neighbourhood,
-            addr.city || addr.town || addr.village,
-            addr.country
-          ].filter(Boolean).join(", ");
-          setForm((p) => ({ ...p, latitude, longitude, location_address: readable || data.display_name || `${latitude.toFixed(5)}, ${longitude.toFixed(5)}` }));
+          const address = data.regeocode?.formatted_address || `${latitude.toFixed(5)}, ${longitude.toFixed(5)}`;
+          setForm((p) => ({ ...p, latitude, longitude, location_address: address }));
         } catch {
           setForm((p) => ({ ...p, latitude, longitude, location_address: `${latitude.toFixed(5)}, ${longitude.toFixed(5)}` }));
         }
@@ -980,12 +974,11 @@ function useReverseGeocode(lat, lon, existingAddress) {
     if (!lat || !lon) return;
     const looksLikeCoords = !existingAddress || /^-?\d+\.\d+,\s*-?\d+\.\d+$/.test(existingAddress.trim());
     if (!looksLikeCoords) { setAddress(existingAddress); return; }
-    fetch(`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lon}&format=json&addressdetails=1`, { headers: { "Accept-Language": "en" } })
+    fetch(`https://restapi.amap.com/v3/geocode/regeo?key=a3fa54b4926b09660455bbb6c286c12a&location=${lon},${lat}&radius=100&extensions=base&batch=false`)
       .then(r => r.json())
       .then(data => {
-        const addr = data.address || {};
-        const readable = [addr.road || addr.pedestrian || addr.street, addr.suburb || addr.neighbourhood, addr.city || addr.town || addr.village, addr.country].filter(Boolean).join(", ");
-        setAddress(readable || data.display_name || existingAddress);
+        const address = data.regeocode?.formatted_address || existingAddress;
+        setAddress(address);
       })
       .catch(() => setAddress(existingAddress));
   }, [lat, lon, existingAddress]);
@@ -1084,13 +1077,13 @@ function VisitDetailPage({ visitId, visits, setVisits, factories, onBack, curren
                   <div className="p-3 border-b border-slate-100 flex items-center justify-between">
                     <h3 className="font-semibold text-slate-800 text-sm flex items-center gap-2">{Icon.pin} Location</h3>
                     {visit.latitude && visit.longitude && (
-                      <a href={`https://maps.google.com/?q=${visit.latitude},${visit.longitude}`} target="_blank" rel="noreferrer"
-                        className="text-xs font-medium text-amber-600 hover:text-amber-700">Open in Google Maps →</a>
+                      <a href={`https://uri.amap.com/marker?position=${visit.longitude},${visit.latitude}&callnative=1`} target="_blank" rel="noreferrer"
+                        className="text-xs font-medium text-amber-600 hover:text-amber-700">Open in Amap →</a>
                     )}
                   </div>
                   {visit.latitude && visit.longitude ? (
                     <iframe title="map" width="100%" height="220" style={{ border: 0, display: "block" }}
-                      src={`https://www.openstreetmap.org/export/embed.html?bbox=${visit.longitude - 0.005},${visit.latitude - 0.005},${visit.longitude + 0.005},${visit.latitude + 0.005}&layer=mapnik&marker=${visit.latitude},${visit.longitude}`}
+                      src={`https://uri.amap.com/marker?position=${visit.longitude},${visit.latitude}&name=Visit+Location&coordinate=gaode&zoom=15&callnative=0`}
                       allowFullScreen />
                   ) : (
                     <div className="p-4 text-sm text-slate-600 flex items-start gap-2">{Icon.pin} {resolvedAddress}</div>
