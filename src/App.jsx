@@ -661,9 +661,20 @@ export default function App() {
 
   // 1. Check existing session on mount, listen for auth changes
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => setSession(session ?? null));
+    async function checkAndSetSession(session) {
+      if (!session) { setSession(null); return; }
+      // Block pending users even if they have a valid auth session
+      const { data: userRow } = await supabase.from("users").select("status").eq("email", session.user.email).maybeSingle();
+      if (userRow?.status === "pending") {
+        await supabase.auth.signOut();
+        setSession(null);
+        return;
+      }
+      setSession(session);
+    }
+    supabase.auth.getSession().then(({ data: { session } }) => checkAndSetSession(session));
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setSession(session ?? null);
+      checkAndSetSession(session);
     });
     return () => subscription.unsubscribe();
   }, []);
