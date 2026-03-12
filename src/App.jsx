@@ -953,7 +953,7 @@ export default function App() {
           onConfirm={() => { confirm.onConfirm(); setConfirm(null); }}
           onCancel={() => setConfirm(null)} />
       )}
-      <header className="fixed top-0 left-0 right-0 z-50 bg-slate-900 shadow-xl">
+      <header className="fixed top-0 left-0 right-0 z-50 bg-slate-900">
         {/* ── Row 1: Logo + Lang + Bell + User ── */}
         <div className="flex items-center h-12 px-3 sm:px-4 gap-2 max-w-6xl mx-auto">
           <button onClick={() => goPage("dashboard")} className="flex items-center gap-2 flex-shrink-0">
@@ -1092,7 +1092,7 @@ function DashboardPage({ visits, devs, factories, setPage, needsFollowUp, dueSoo
             {stats.map(({ label, value, color, onClick }) => (
               <div key={label} onClick={onClick}
                 className={`bg-white/10 rounded-xl p-3 border border-white/10 transition-all ${onClick ? "cursor-pointer hover:bg-white/20 hover:scale-105" : ""}`}>
-                <p className={`text-3xl font-bold text-${color}-400`}>{value}</p>
+                <p className={`text-xl sm:text-3xl font-bold text-${color}-400`}>{value}</p>
                 <p className="text-slate-300 text-xs mt-0.5">{label}</p>
               </div>
             ))}
@@ -2010,7 +2010,7 @@ function DevForm({ dev, factories, users, currentUser, onSave, onCancel }) {
     team_member_name: currentUser?.full_name || "", team_member_id: currentUser?.id || "",
     material: "", size: "", weight: "",
     internal_estimated_date: "", internal_estimated_price: "",
-    special_remarks: "", picture_url: "", additional_pictures: [], status: "open",
+    special_remarks: "", picture_url: "", additional_pictures: [], artwork_files: [], status: "open",
   });
 
   const set = (key, val) => setForm((p) => ({ ...p, [key]: val }));
@@ -2032,7 +2032,22 @@ function DevForm({ dev, factories, users, currentUser, onSave, onCancel }) {
     }
   };
 
-  const valid = form.title && form.factory_ids.length > 0;
+  const addArtworks = async (e) => {
+    const files = Array.from(e.target.files || []);
+    for (const file of files) {
+      try {
+        const path = `${Date.now()}_${Math.random().toString(36).slice(2)}_${file.name}`;
+        const { error } = await supabase.storage.from("photos").upload(path, file, { upsert: false, contentType: file.type });
+        if (error) throw error;
+        const { data } = supabase.storage.from("photos").getPublicUrl(path);
+        setForm((p) => ({ ...p, artwork_files: [...(p.artwork_files || []), { name: file.name, url: data.publicUrl }] }));
+      } catch (err) {
+        alert("Artwork upload failed: " + (err.message || err));
+      }
+    }
+  };
+
+  const valid = form.title && form.factory_ids.length > 0 && form.internal_estimated_date;
 
   return (
     <FormCard title={isEdit ? "Edit Development" : "New Development Request"} onClose={onCancel}
@@ -2061,7 +2076,7 @@ function DevForm({ dev, factories, users, currentUser, onSave, onCancel }) {
 
       {/* Target Date — visible to all */}
       <div className="grid grid-cols-2 gap-4">
-        <div><Label>Target Date</Label><Input type="date" value={form.internal_estimated_date} onChange={(e) => set("internal_estimated_date", e.target.value)} /></div>
+        <div><Label required>Target Date</Label><Input type="date" value={form.internal_estimated_date} onChange={(e) => set("internal_estimated_date", e.target.value)} /></div>
       </div>
 
       {/* Internal Info — not visible to suppliers */}
@@ -2105,6 +2120,28 @@ function DevForm({ dev, factories, users, currentUser, onSave, onCancel }) {
                 <img src={p} alt="" className="w-full h-full object-cover" />
                 <button type="button" onClick={() => setForm((prev) => ({ ...prev, additional_pictures: prev.additional_pictures.filter((_, j) => j !== i) }))}
                   className="absolute top-1 right-1 w-5 h-5 bg-red-600 rounded flex items-center justify-center text-white text-xs">×</button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+      <div>
+        <Label>Artwork Files <span className="text-slate-400 font-normal text-xs">(PDF, AI, images)</span></Label>
+        <label className="flex items-center justify-center h-11 border-2 border-dashed border-purple-200 rounded-xl cursor-pointer hover:border-purple-400 hover:bg-purple-50/50 transition-all">
+          <input type="file" accept=".pdf,.ai,.eps,.svg,image/*" multiple onChange={addArtworks} className="hidden" />
+          <span className="flex items-center gap-2 text-sm text-slate-500">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+            Upload artworks
+          </span>
+        </label>
+        {form.artwork_files?.length > 0 && (
+          <div className="space-y-1.5 mt-2">
+            {form.artwork_files.map((f, i) => (
+              <div key={i} className="flex items-center gap-2 px-3 py-2 bg-purple-50 border border-purple-100 rounded-lg">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-purple-500 flex-shrink-0"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                <a href={f.url} target="_blank" rel="noreferrer" className="text-xs text-purple-700 truncate flex-1 hover:underline">{f.name}</a>
+                <button type="button" onClick={() => setForm((prev) => ({ ...prev, artwork_files: prev.artwork_files.filter((_, j) => j !== i) }))}
+                  className="w-4 h-4 flex items-center justify-center text-red-400 hover:text-red-600 text-sm flex-shrink-0">×</button>
               </div>
             ))}
           </div>
@@ -2215,6 +2252,24 @@ function DevDetailPage({ devId, devs, setDevs, factories, getFactory, getUser, o
                       <div key={i} className="aspect-square rounded-xl overflow-hidden">
                         <img src={p} alt="" className="w-full h-full object-cover cursor-pointer hover:opacity-90 transition-opacity" onClick={() => setLightbox(p)} />
                       </div>
+                    ))}
+                  </div>
+                </Card>
+              )}
+              {dev.artwork_files?.length > 0 && (
+                <Card className="shadow-sm p-4">
+                  <h3 className="font-semibold text-slate-800 mb-3 text-sm flex items-center gap-2">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-purple-500"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                    Artwork Files
+                  </h3>
+                  <div className="space-y-1.5">
+                    {dev.artwork_files.map((f, i) => (
+                      <a key={i} href={f.url} target="_blank" rel="noreferrer"
+                        className="flex items-center gap-2 px-3 py-2 bg-purple-50 border border-purple-100 rounded-lg hover:bg-purple-100 transition-colors">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-purple-500 flex-shrink-0"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                        <span className="text-xs text-purple-700 truncate">{f.name}</span>
+                        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="text-purple-400 ml-auto flex-shrink-0"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+                      </a>
                     ))}
                   </div>
                 </Card>
