@@ -993,13 +993,13 @@ export default function App() {
           </div>
         </div>
         {/* ── Row 2: Nav tabs ── */}
-        <div className="border-t border-white/10">
-          <nav className="flex items-center gap-0.5 px-2 max-w-6xl mx-auto overflow-x-auto">
+        <div>
+          <nav className="flex items-center justify-center gap-2 px-2 max-w-6xl mx-auto overflow-x-auto">
             {navItems.map((item) => {
               const active = !detail && page === item.id;
               return (
                 <button key={item.id} onClick={() => goPage(item.id)}
-                  className={`flex items-center gap-1.5 px-3 py-2.5 transition-all text-xs font-medium whitespace-nowrap flex-shrink-0 border-b-2 ${
+                  className={`flex items-center gap-1.5 px-4 py-2.5 transition-all text-xs font-medium whitespace-nowrap flex-shrink-0 border-b-2 ${
                     active ? "border-amber-500 text-amber-400" : "border-transparent text-slate-400 hover:text-white hover:border-white/30"
                   }`}>
                   {item.icon}<span>{item.label}</span>
