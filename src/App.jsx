@@ -1906,7 +1906,8 @@ function DevCard({ dev, onEdit, onDelete, onView }) {
 function DevForm({ dev, factories, users, currentUser, onSave, onCancel }) {
   const isEdit = !!dev?.id;
   const [form, setForm] = useState(dev || {
-    title: "", client_name: "", factory_ids: [], factory_names: [],
+    title: "", department: "", client_name: "", buyer_name: "", mail_subject: "",
+    factory_ids: [], factory_names: [],
     team_member_name: currentUser?.full_name || "", team_member_id: currentUser?.id || "",
     material: "", size: "", weight: "",
     internal_estimated_date: "", internal_estimated_price: "",
@@ -1937,26 +1938,45 @@ function DevForm({ dev, factories, users, currentUser, onSave, onCancel }) {
   return (
     <FormCard title={isEdit ? "Edit Development" : "New Development Request"} onClose={onCancel}
       footer={<><Btn variant="outline" onClick={onCancel}>Cancel</Btn><Btn variant="dark" disabled={!valid} onClick={() => onSave(form, !isEdit)}>{Icon.check} {isEdit ? "Update" : "Create & Notify Factories"}</Btn></>}>
+
+      {/* Product name + Department */}
       <div className="grid grid-cols-2 gap-4">
         <div><Label required>Item / Product Name</Label><Input value={form.title} onChange={(e) => set("title", e.target.value)} placeholder="e.g. Blue Polo Shirt" /></div>
-        <div><Label>Client Name</Label><Input value={form.client_name} onChange={(e) => set("client_name", e.target.value)} placeholder="Client name" /></div>
+        <div>
+          <Label>Department</Label>
+          <select value={form.department || ""} onChange={(e) => set("department", e.target.value)}
+            className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm text-slate-700 bg-white focus:outline-none focus:ring-2 focus:ring-amber-400">
+            <option value="">— Select department —</option>
+            <option value="Men">Men</option>
+            <option value="Women">Women</option>
+          </select>
+        </div>
       </div>
+
+      {/* Size / Weight / Material */}
       <div className="grid grid-cols-3 gap-4">
         <div><Label>Size</Label><Input value={form.size} onChange={(e) => set("size", e.target.value)} placeholder="e.g. 30x40cm" /></div>
         <div><Label>Weight</Label><Input value={form.weight} onChange={(e) => set("weight", e.target.value)} placeholder="e.g. 200g" /></div>
         <div><Label>Material</Label><Input value={form.material} onChange={(e) => set("material", e.target.value)} placeholder="e.g. Cotton" /></div>
       </div>
-      <div className="flex items-center gap-3 px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-700">
-        <span className="text-slate-400">{Icon.user}</span>
-        <span>Assigned to: <strong>{form.team_member_name}</strong></span>
-        <span className="ml-auto text-xs text-slate-400 bg-slate-200 px-2 py-0.5 rounded-md">You</span>
+
+      {/* Target Date — visible to all */}
+      <div className="grid grid-cols-2 gap-4">
+        <div><Label>Target Date</Label><Input type="date" value={form.internal_estimated_date} onChange={(e) => set("internal_estimated_date", e.target.value)} /></div>
       </div>
+
+      {/* Internal Info — not visible to suppliers */}
       <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 space-y-3">
-        <p className="text-xs font-semibold text-amber-700 uppercase tracking-wide">Internal Info (not visible to suppliers)</p>
+        <p className="text-xs font-semibold text-amber-700 uppercase tracking-wide flex items-center gap-1.5">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+          Internal Info — not visible to suppliers
+        </p>
         <div className="grid grid-cols-2 gap-4">
-          <div><Label>Target Date</Label><Input type="date" value={form.internal_estimated_date} onChange={(e) => set("internal_estimated_date", e.target.value)} /></div>
-          <div><Label>Target Price (RMB ¥)</Label><Input type="number" value={form.internal_estimated_price} onChange={(e) => set("internal_estimated_price", e.target.value)} placeholder="0.00" /></div>
+          <div><Label>Client Name</Label><Input value={form.client_name} onChange={(e) => set("client_name", e.target.value)} placeholder="e.g. H&M" /></div>
+          <div><Label>Buyer Name</Label><Input value={form.buyer_name || ""} onChange={(e) => set("buyer_name", e.target.value)} placeholder="e.g. Sarah Cohen" /></div>
         </div>
+        <div><Label>Mail Subject</Label><Input value={form.mail_subject || ""} onChange={(e) => set("mail_subject", e.target.value)} placeholder="Paste the email subject line here" /></div>
+        <div><Label>Target Price (RMB ¥)</Label><Input type="number" value={form.internal_estimated_price} onChange={(e) => set("internal_estimated_price", e.target.value)} placeholder="0.00" /></div>
       </div>
       <div>
         <Label required>Assign Factories {form.factory_ids.length > 1 && <span className="text-purple-600 font-normal">(will create {form.factory_ids.length} separate developments)</span>}</Label>
