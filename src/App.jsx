@@ -1051,7 +1051,7 @@ export default function App() {
           </nav>
         </div>
       </header>
-      <main className="pt-24">{content}</main>
+      <main className="pt-[84px]">{content}</main>
     </div>
   );
 }
@@ -1318,17 +1318,17 @@ function VisitsPage({ visits, setVisits, factories, currentUser, onView, showToa
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50/20">
       <div className="bg-slate-800 text-white">
-        <div className="max-w-5xl mx-auto px-4 sm:px-6 py-6">
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <div className="max-w-3xl mx-auto px-4 sm:px-6 py-4">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
             <div>
-              <h1 className="text-3xl font-bold">{t("visits")}</h1>
-              <p className="text-slate-400 mt-1 text-sm">Track and log all factory visits</p>
+              <h1 className="text-xl font-bold">{t("visits")}</h1>
+              <p className="text-slate-400 mt-0.5 text-xs">Track and log all factory visits</p>
             </div>
             <Btn variant="amber" size="lg" onClick={() => { setEditingVisit(null); setShowForm(true); }}>
               {Icon.plus} {t("newVisit")}
             </Btn>
           </div>
-          <div className="grid grid-cols-3 gap-3 mt-6">
+          <div className="grid grid-cols-3 gap-3 mt-3">
             {[
               { label: t("total"), value: statsTotal, filters: ["all"] },
               { label: t("today"), value: statsToday, filters: ["today", "week", "month", "year"], isTimeBox: true },
@@ -1350,7 +1350,7 @@ function VisitsPage({ visits, setVisits, factories, currentUser, onView, showToa
                     }
                   }}
                   className={`rounded-xl p-4 border transition-all ${filters !== null || isTimeBox ? "cursor-pointer hover:bg-white/20 hover:scale-105" : ""} ${isActive ? "bg-amber-500/30 border-amber-400" : "bg-white/10 border-white/10"}`}>
-                  <p className="text-2xl font-bold">{value}</p>
+                  <p className="text-lg font-bold">{value}</p>
                   <p className="text-slate-300 text-xs mt-0.5">{label}{isTimeBox && timeFilter !== "all" ? ` · ${timeFilter}` : ""}</p>
                 </div>
               );
@@ -1653,7 +1653,7 @@ function VisitDetailPage({ visitId, visits, setVisits, factories, onBack, curren
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50/20">
       <div className="bg-slate-800 text-white">
-        <div className="max-w-5xl mx-auto px-4 sm:px-6 py-6">
+        <div className="max-w-3xl mx-auto px-4 sm:px-6 py-4">
           <div className="flex items-start justify-between gap-4">
             <div>
               <button onClick={onBack} className="flex items-center gap-2 text-slate-400 hover:text-white text-sm mb-3 transition-colors">{Icon.back} {t("backToVisits")}</button>
@@ -1833,11 +1833,11 @@ function DevelopmentsPage({ devs, setDevs, factories, users, currentUser, onView
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-purple-50/20">
       <div className="bg-slate-800 text-white">
-        <div className="max-w-5xl mx-auto px-4 sm:px-6 py-6">
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <div className="max-w-3xl mx-auto px-4 sm:px-6 py-4">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
             <div>
-              <h1 className="text-3xl font-bold">{t("dev")}</h1>
-              <p className="text-slate-400 mt-1 text-sm">Track product development requests</p>
+              <h1 className="text-xl font-bold">{t("dev")}</h1>
+              <p className="text-slate-400 mt-0.5 text-xs">Track product development requests</p>
             </div>
             {!isSupplier && (
               <Btn variant="purple" size="lg" onClick={() => { setEditingDev(null); setShowForm(true); }}>
@@ -1845,11 +1845,11 @@ function DevelopmentsPage({ devs, setDevs, factories, users, currentUser, onView
               </Btn>
             )}
           </div>
-          <div className="grid grid-cols-3 gap-3 mt-6">
+          <div className="grid grid-cols-3 gap-3 mt-3">
             {[[t("active"), openCount, "open"], [t("completed"), doneCount, "completed"], [t("total"), factoryDevs.length, null]].map(([label, value, tabTarget]) => (
               <div key={label} onClick={() => tabTarget && setTab(tabTarget)}
                 style={{background:"rgba(255,255,255,0.1)",border:"1px solid rgba(255,255,255,0.15)",borderRadius:"0.75rem",padding:"1rem",cursor:tabTarget?"pointer":"default",transition:"all 0.2s"}}>
-                <p className="text-2xl font-bold">{value}</p>
+                <p className="text-lg font-bold">{value}</p>
                 <p style={{color:"#cbd5e1"}} className="text-xs mt-0.5">{label}{filterFactory !== "all" ? " *" : ""}</p>
               </div>
             ))}
@@ -2639,12 +2639,12 @@ function FactoriesPage({ factories, setFactories, currentUser, devs = [], visits
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-amber-50/30">
       <div className="bg-slate-800 text-white">
-        <div className="max-w-5xl mx-auto px-4 sm:px-6 py-6">
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-            <div><h1 className="text-3xl font-bold">{t("factories")}</h1><p className="text-slate-400 mt-1 text-sm">{t("manageFactories")}</p></div>
+        <div className="max-w-3xl mx-auto px-4 sm:px-6 py-4">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+            <div><h1 className="text-xl font-bold">{t("factories")}</h1><p className="text-slate-400 mt-0.5 text-xs">{t("manageFactories")}</p></div>
             {isAdmin && <Btn variant="amber" size="lg" onClick={() => { setEditingFactory(null); setShowForm(true); }}>{Icon.plus} {t("addFactory")}</Btn>}
           </div>
-          <div className="bg-white/10 rounded-xl p-4 border border-white/10 mt-6 inline-flex items-center gap-3">
+          <div className="bg-white/10 rounded-xl p-3 border border-white/10 mt-3 inline-flex items-center gap-3">
             <div className="w-10 h-10 rounded-lg bg-amber-500/20 flex items-center justify-center">{Icon.building}</div>
             <div><p className="text-2xl font-bold">{factories.length}</p><p className="text-slate-300 text-xs">{t("totalFactories")}</p></div>
           </div>
@@ -2879,11 +2879,11 @@ function UsersPage({ users, setUsers, factories, currentUser, showToast, askConf
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100">
       <div className="bg-slate-800 text-white">
-        <div className="max-w-5xl mx-auto px-4 sm:px-6 py-6">
-          <div className="flex items-center justify-between gap-4 mb-6">
-            <div className="flex items-center gap-4">
-              <div className="w-12 h-12 rounded-xl bg-amber-500/20 flex items-center justify-center">{Icon.users}</div>
-              <div><h1 className="text-3xl font-bold">User Management</h1><p className="text-slate-400 mt-1 text-sm">Manage users, roles, and supplier assignments</p></div>
+        <div className="max-w-3xl mx-auto px-4 sm:px-6 py-4">
+          <div className="flex items-center justify-between gap-3 mb-4">
+            <div className="flex items-center gap-3">
+              <div className="w-9 h-9 rounded-xl bg-amber-500/20 flex items-center justify-center">{Icon.users}</div>
+              <div><h1 className="text-xl font-bold">User Management</h1><p className="text-slate-400 mt-0.5 text-xs">Manage users, roles, and supplier assignments</p></div>
             </div>
             {!notAdmin && <Btn variant="amber" onClick={() => setShowAddUser(s => !s)}>{Icon.plus} {t("addUser")}</Btn>}
           </div>
