@@ -614,6 +614,17 @@ export default function App() {
 function DashboardPage({ visits, devs, factories, setPage, needsFollowUp, onViewDev, onViewVisit, currentUser }) {
   const isAdmin = currentUser?.role === "admin";
   const isSupplier = currentUser?.role === "supplier";
+  const [bannerTab, setBannerTab] = React.useState("visits");
+  const timerRef = React.useRef(null);
+
+  React.useEffect(() => {
+    if (isSupplier) return;
+    timerRef.current = setInterval(() => {
+      setBannerTab(t => t === "visits" ? "devs" : "visits");
+    }, 30000);
+    return () => clearInterval(timerRef.current);
+  }, [isSupplier]);
+
   const recentVisits = [...visits].sort((a, b) => new Date(b.visit_date) - new Date(a.visit_date)).slice(0, 3);
   const recentDevs   = [...devs].sort((a, b) => new Date(b.created_date) - new Date(a.created_date)).slice(0, 3);
   const openCount    = devs.filter((d) => d.status === "open" || d.status === "in_progress").length;
@@ -628,20 +639,18 @@ function DashboardPage({ visits, devs, factories, setPage, needsFollowUp, onView
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100">
       <header className="bg-slate-800 text-white">
-        <div className="max-w-5xl mx-auto px-4 sm:px-6 py-6">
-          <h1 className="text-3xl font-bold">Dashboard</h1>
-          <p className="text-slate-300 mt-1 text-sm">Welcome back — here's what's happening</p>
+        <div className="max-w-5xl mx-auto px-4 sm:px-6 py-4">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            {stats.map(({ label, value, color }) => (
+              <div key={label} className="bg-white/10 rounded-xl p-3 border border-white/10">
+                <p className={`text-3xl font-bold text-${color}-400`}>{value}</p>
+                <p className="text-slate-300 text-xs mt-0.5">{label}</p>
+              </div>
+            ))}
+          </div>
         </div>
       </header>
       <div className="max-w-5xl mx-auto px-4 sm:px-6 py-6 space-y-6">
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          {stats.map(({ label, value, color }) => (
-            <Card key={label} className="p-4 shadow-sm">
-              <p className={`text-3xl font-bold text-${color}-600`}>{value}</p>
-              <p className="text-xs text-slate-500 mt-1">{label}</p>
-            </Card>
-          ))}
-        </div>
         {needsFollowUp.length > 0 && (
           <div className="bg-orange-50 border border-orange-200 rounded-2xl p-4 flex items-center gap-3">
             <span className="text-orange-500 flex-shrink-0">{Icon.alert}</span>
@@ -649,39 +658,81 @@ function DashboardPage({ visits, devs, factories, setPage, needsFollowUp, onView
             <button onClick={() => setPage("developments")} className="ml-auto text-xs font-semibold text-orange-600 hover:underline whitespace-nowrap">View all →</button>
           </div>
         )}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {!isSupplier && <div>
+        {!isSupplier ? (
+          <div>
             <div className="flex items-center justify-between mb-3">
-              <h2 className="text-lg font-semibold text-slate-800">Recent Visits</h2>
-              <button onClick={() => setPage("visits")} className="text-sm text-amber-600 font-medium hover:underline">View all</button>
+              <div className="flex gap-1 bg-slate-200 rounded-lg p-1">
+                <button onClick={() => { setBannerTab("visits"); clearInterval(timerRef.current); }}
+                  className={`px-4 py-1.5 text-sm font-medium rounded-md transition-all ${bannerTab === "visits" ? "bg-white text-slate-800 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}>
+                  Recent Visits
+                </button>
+                <button onClick={() => { setBannerTab("devs"); clearInterval(timerRef.current); }}
+                  className={`px-4 py-1.5 text-sm font-medium rounded-md transition-all ${bannerTab === "devs" ? "bg-white text-slate-800 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}>
+                  Recent Developments
+                </button>
+              </div>
+              <button onClick={() => setPage(bannerTab === "visits" ? "visits" : "developments")}
+                className="text-sm text-amber-600 font-medium hover:underline">View all</button>
             </div>
-            <div className="space-y-3">
-              {recentVisits.length === 0 ? <p className="text-slate-400 text-sm text-center py-8">No visits yet</p>
-                : recentVisits.map((v) => (
-                  <Card key={v.id} className="shadow-sm hover:shadow-md transition-all">
-                    <div className="flex items-center gap-3 p-3">
-                      <div className="w-12 h-12 rounded-xl bg-slate-100 flex-shrink-0 overflow-hidden flex items-center justify-center text-slate-400">
-                        {v.picture_url ? <img src={v.picture_url} alt="" className="w-full h-full object-cover" /> : Icon.box}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <Badge className="bg-amber-500 text-white">#{v.order_number}</Badge>
-                          <span className="text-sm font-semibold text-slate-800 truncate">{v.item}</span>
+            {bannerTab === "visits" && (
+              <div className="space-y-3">
+                {recentVisits.length === 0 ? <p className="text-slate-400 text-sm text-center py-8">No visits yet</p>
+                  : recentVisits.map((v) => (
+                    <Card key={v.id} className="shadow-sm hover:shadow-md transition-all">
+                      <div className="flex items-center gap-3 p-3">
+                        <div className="w-12 h-12 rounded-xl bg-slate-100 flex-shrink-0 overflow-hidden flex items-center justify-center text-slate-400">
+                          {v.picture_url ? <img src={v.picture_url} alt="" className="w-full h-full object-cover" /> : Icon.box}
                         </div>
-                        <div className="flex items-center gap-3 mt-0.5 text-xs text-slate-500">
-                          <span className="flex items-center gap-1">{Icon.building} {v.factory_name}</span>
-                          <span className="flex items-center gap-1">{Icon.calendar} {fmtDate(v.visit_date)}</span>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <Badge className="bg-amber-500 text-white">#{v.order_number}</Badge>
+                            <span className="text-sm font-semibold text-slate-800 truncate">{v.item}</span>
+                          </div>
+                          <div className="flex items-center gap-3 mt-0.5 text-xs text-slate-500">
+                            <span className="flex items-center gap-1">{Icon.building} {v.factory_name}</span>
+                            <span className="flex items-center gap-1">{Icon.calendar} {fmtDate(v.visit_date)}</span>
+                          </div>
                         </div>
+                        <button onClick={() => onViewVisit(v.id)}
+                          className="flex-shrink-0 flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-amber-700 bg-amber-50 hover:bg-amber-100 rounded-lg transition-colors">
+                          {Icon.eye} View
+                        </button>
                       </div>
-                      <button onClick={() => onViewVisit(v.id)}
-                        className="flex-shrink-0 flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-amber-700 bg-amber-50 hover:bg-amber-100 rounded-lg transition-colors">
-                        {Icon.eye} View
-                      </button>
-                    </div>
-                  </Card>
-                ))}
-            </div>
-          </div>}
+                    </Card>
+                  ))}
+              </div>
+            )}
+            {bannerTab === "devs" && (
+              <div className="space-y-3">
+                {recentDevs.length === 0 ? <p className="text-slate-400 text-sm text-center py-8">No developments yet</p>
+                  : recentDevs.map((d) => {
+                    const nf = (d.status === "open" || d.status === "in_progress") && (!d.updates || d.updates.length === 0) && daysAgo(d.created_date) >= 3;
+                    return (
+                      <Card key={d.id} className={`shadow-sm hover:shadow-md transition-all ${nf ? "border-l-4 border-l-orange-400" : ""}`}>
+                        <div className="flex items-center gap-3 p-3">
+                          <div className="w-12 h-12 rounded-xl bg-slate-100 flex-shrink-0 overflow-hidden flex items-center justify-center text-slate-400">
+                            {d.picture_url ? <img src={d.picture_url} alt="" className="w-full h-full object-cover" /> : Icon.box}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <Badge className={DEV_STATUS_CSS[d.status]}>{DEV_STATUS_LABEL[d.status]}</Badge>
+                              {nf && <Badge className="bg-orange-100 text-orange-700">⏰ Follow-up</Badge>}
+                              <span className="text-sm font-semibold text-slate-800 truncate">{d.title}</span>
+                            </div>
+                            <p className="text-xs text-slate-500 mt-0.5">{d.factory_names?.join(", ") || "No factory"} · {d.team_member_name}</p>
+                          </div>
+                          <button onClick={() => onViewDev(d.id)}
+                            className="flex-shrink-0 flex items-center gap-1 px-3 py-1.5 text-xs font-medium text-purple-700 bg-purple-50 hover:bg-purple-100 rounded-lg transition-colors">
+                            {Icon.eye} View
+                          </button>
+                        </div>
+                      </Card>
+                    );
+                  })}
+              </div>
+            )}
+          </div>
+        ) : (
           <div>
             <div className="flex items-center justify-between mb-3">
               <h2 className="text-lg font-semibold text-slate-800">Recent Developments</h2>
@@ -715,7 +766,7 @@ function DashboardPage({ visits, devs, factories, setPage, needsFollowUp, onView
                 })}
             </div>
           </div>
-        </div>
+        )}
       </div>
     </div>
   );
@@ -1213,9 +1264,9 @@ function DevelopmentsPage({ devs, setDevs, factories, users, currentUser, onView
         {!showForm && (
           <>
             <div className="flex border-b border-slate-200 mb-5">
-              {[["open", "Active"], ["completed", "Completed"]].map(([v, l]) => (
+              {[["open", "Active", openCount], ["completed", "Completed", doneCount]].map(([v, l, count]) => (
                 <button key={v} onClick={() => setTab(v)}
-                  className={`px-5 py-3 text-sm font-medium transition-colors ${tab === v ? "text-purple-600 border-b-2 border-purple-500" : "text-slate-500 hover:text-slate-700"}`}>{l}</button>
+                  className={`px-5 py-3 text-sm font-medium transition-colors ${tab === v ? "text-purple-600 border-b-2 border-purple-500" : "text-slate-500 hover:text-slate-700"}`}>{l} ({count})</button>
               ))}
             </div>
             <div className="flex flex-col sm:flex-row gap-3 mb-5">
@@ -1253,8 +1304,17 @@ function DevelopmentsPage({ devs, setDevs, factories, users, currentUser, onView
 
 function DevCard({ dev, onEdit, onDelete, onView }) {
   const needsFollowUp = (dev.status === "open" || dev.status === "in_progress") && (!dev.updates || dev.updates.length === 0) && daysAgo(dev.created_date) >= 3;
-  const isActive   = dev.status === "open" || dev.status === "in_progress";
-  const activeDays = daysAgo(dev.created_date);
+  const isActive    = dev.status === "open" || dev.status === "in_progress";
+  const isCompleted = dev.status === "completed";
+  const activeDays  = daysAgo(dev.created_date);
+
+  // For completed devs, calculate days from created to last update (completion date)
+  const completedDate = isCompleted && dev.updates?.length > 0
+    ? dev.updates[dev.updates.length - 1]?.created_date
+    : null;
+  const daysToComplete = completedDate
+    ? Math.round((new Date(completedDate) - new Date(dev.created_date)) / 86400000)
+    : isCompleted ? activeDays : null;
 
   return (
     <Card className={`shadow-sm hover:shadow-lg transition-all overflow-hidden ${needsFollowUp ? "border-l-4 border-l-orange-400" : ""}`}>
@@ -1268,6 +1328,11 @@ function DevCard({ dev, onEdit, onDelete, onView }) {
             {isActive && (
               <Badge className={`text-xs ${activeDays >= 14 ? "bg-red-100 text-red-700" : activeDays >= 7 ? "bg-orange-100 text-orange-700" : "bg-slate-100 text-slate-600"}`}>
                 {activeDays === 0 ? "Today" : `${activeDays}d open`}
+              </Badge>
+            )}
+            {isCompleted && daysToComplete !== null && (
+              <Badge className="text-xs bg-green-100 text-green-700">
+                {daysToComplete === 0 ? "Same day" : `${daysToComplete}d to complete`}
               </Badge>
             )}
             {needsFollowUp && <Badge className="bg-orange-100 text-orange-700 text-xs">⏰ Follow-up needed</Badge>}
