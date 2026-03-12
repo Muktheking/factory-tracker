@@ -634,11 +634,19 @@ export default function App() {
     if (!k) return n.msg || ""; // fallback for old format
     if (k === "factoryAdded") return `${t("factoryAdded")}: ${n.msgData.name || ""}`;
     if (k === "infoEdited") return `${t("infoEdited")}: ${n.msgData.name || ""}`;
-    if (k === "newDev") return `${t("newDevelopment")}: ${n.msgData.title || ""}`;
-    if (k === "newMsg") return `${t("newMessage")} ${n.msgData.sender || ""}: ${n.msgData.preview || ""}`;
-    if (k === "newVisit") return `${t("newVisitLogged")}: ${n.msgData.visitor || ""} → ${n.msgData.factory || ""}`;
+    if (k === "newDev") return globalLang === "zh"
+      ? `${n.msgData.team || "有人"}新建了开发: ${n.msgData.title || ""}`
+      : `${n.msgData.team || "New development"}: ${n.msgData.title || ""}`;
+    if (k === "newMsg") return globalLang === "zh"
+      ? `${n.msgData.sender || "有人"} 在 "${n.msgData.devTitle || "开发"}" 中发来消息: ${n.msgData.preview || ""}`
+      : `${n.msgData.sender || "Someone"} in "${n.msgData.devTitle || "a development"}": ${n.msgData.preview || ""}`;
+    if (k === "newVisit") return globalLang === "zh"
+      ? `${n.msgData.visitor || "有人"} 拜访了 ${n.msgData.factory || ""}`
+      : `${n.msgData.visitor || "Someone"} visited ${n.msgData.factory || ""}`;
     if (k === "pending") return `${globalLang === "zh" ? "新账户申请" : "New signup request"}: ${n.msgData.name || ""} (${n.msgData.email || ""})`;
-    if (k === "newMsgCount") return `${n.msgData.count} ${t("newMessage").replace(" from","").replace("来自","")}`;
+    if (k === "newMsgCount") return globalLang === "zh"
+      ? `${n.msgData.count} 条新消息`
+      : `${n.msgData.count} new message${n.msgData.count > 1 ? "s" : ""}`;
     return n.msg || "";
   }
   const [dbError, setDbError]     = useState(null);
@@ -704,7 +712,7 @@ export default function App() {
         if (payload.eventType === "INSERT" && payload.new?.team_member_name !== cu?.full_name) {
           // Only admin gets notified of all new devs; regular users only get notified if they are on a dev for the same factory
           if (cu.role === "admin") {
-            addNotification("newDev", {title: payload.new?.title || ""}, payload.new?.id, "dev");
+            addNotification("newDev", {title: payload.new?.title || "", team: payload.new?.team_member_name || ""}, payload.new?.id, "dev");
           }
           // suppliers and regular users don't get notified of other people's new developments
         }
@@ -767,18 +775,31 @@ export default function App() {
 
         const allDevs = await db.getDevs();
         if (allDevs) {
-          // Count total messages across all relevant devs
+          // Track per-dev message counts to find exactly which dev got new messages
           const myDevs = allDevs.filter(d =>
             currentUser.role === "admin" ||
             d.team_member_id === currentUser.id ||
             (currentUser.role === "supplier" && d.factory_ids?.includes(currentUser.factory_id))
           );
-          const totalMsgs = myDevs.reduce((acc, d) => acc + (d.messages?.length || 0), 0);
-          if (lastMsgCountRef.current !== null && totalMsgs > lastMsgCountRef.current) {
-            const diff = totalMsgs - lastMsgCountRef.current;
-            addNotification("newMsgCount", {count: diff}, null, "chat");
-          }
-          lastMsgCountRef.current = totalMsgs;
+          const prevCounts = lastMsgCountRef.current || {};
+          const newCounts = {};
+          myDevs.forEach(d => {
+            const msgs = d.messages || [];
+            newCounts[d.id] = msgs.length;
+            const prev = prevCounts[d.id];
+            if (prev !== undefined && msgs.length > prev) {
+              // Find the newest message not sent by current user
+              const newMsgs = msgs.slice(prev).filter(m => m.sender_name !== currentUser.full_name);
+              newMsgs.forEach(m => {
+                addNotification("newMsg", {
+                  sender: m.sender_name || "Someone",
+                  preview: m.message?.slice(0, 50) || "",
+                  devTitle: d.title || "",
+                }, d.id, "chat");
+              });
+            }
+          });
+          lastMsgCountRef.current = newCounts;
 
           // Only admin gets notified of new developments from others
           if (currentUser.role === "admin") {
@@ -786,7 +807,7 @@ export default function App() {
             if (lastDevCountRef.current !== null && totalDevs > lastDevCountRef.current) {
               const newest = allDevs.sort((a,b) => new Date(b.created_date)-new Date(a.created_date))[0];
               if (newest && newest.team_member_id !== currentUser.id) {
-                addNotification("newDev", {title: newest.title || ""}, newest.id, "dev");
+                addNotification("newDev", {title: newest.title || "", team: newest.team_member_name || ""}, newest.id, "dev");
               }
             }
             lastDevCountRef.current = totalDevs;
