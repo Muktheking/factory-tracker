@@ -1,4 +1,4 @@
-// v2 - fixed logo, translations, factory edit, notifications
+// v3 - notifications 5s, nav shortcuts, visits filter, dev filter/sort, pending users, rebranding
 import { useState, useRef, useEffect } from "react";
 import { createClient } from "@supabase/supabase-js";
 
@@ -57,8 +57,8 @@ const TRANSLATIONS = {
     factoryAdded: "Factory added", infoEdited: "Info edited", newDevelopment: "New development",
     clearAll: "Clear all",
     // Auth
-    signIn: "Sign In", signUp: "Sign Up", forgotPassword: "Forgot password?",
-    welcomeBack: "Sign in to your account", createAccount: "Create Account",
+    signIn: "Log In", signUp: "Create an Account", forgotPassword: "Forgot password?",
+    welcomeBack: "Log in to your account", createAccount: "Create Account",
     // Misc
     readOnly: "Read-only view. Only administrators can edit users.",
     noWeChat: "No WeChat ID", notAssigned: "Not assigned", noFactory: "No factory",
@@ -71,7 +71,7 @@ const TRANSLATIONS = {
     updateFactory: "Update Factory", noVisitsFound: "No visits found", noDevsFound: "No developments found",
     logFirstVisit: "Log your first factory visit", createFirstDev: "Create your first development request",
     backToVisits: "Back to Visits", backToDevs: "Back to Developments",
-    factoryTrackerTitle: "Factory Tracker", internalUseOnly: "Factory Tracker · Internal Use Only",
+    factoryTrackerTitle: "Fashion-Passion", internalUseOnly: "Fashion-Passion · Internal Use Only",
   },
   zh: {
     // Nav
@@ -124,7 +124,7 @@ const TRANSLATIONS = {
     factoryAdded: "工厂已添加", infoEdited: "信息已更新", newDevelopment: "新建开发",
     clearAll: "清除全部",
     // Auth
-    signIn: "登录", signUp: "注册", forgotPassword: "忘记密码？",
+    signIn: "登录", signUp: "创建账户", forgotPassword: "忘记密码？",
     welcomeBack: "登录您的账户", createAccount: "创建账户",
     // Misc
     readOnly: "只读模式，只有管理员可以编辑用户。",
@@ -138,7 +138,7 @@ const TRANSLATIONS = {
     updateFactory: "更新工厂", noVisitsFound: "未找到拜访记录", noDevsFound: "未找到开发记录",
     logFirstVisit: "记录您的第一次工厂拜访", createFirstDev: "创建第一个开发请求",
     backToVisits: "返回拜访列表", backToDevs: "返回开发列表",
-    factoryTrackerTitle: "工厂追踪系统", internalUseOnly: "工厂追踪系统 · 仅供内部使用",
+    factoryTrackerTitle: "Fashion-Passion", internalUseOnly: "Fashion-Passion · 仅供内部使用",
   }
 };
 let globalLang = "en";
@@ -186,6 +186,9 @@ async function sendNotification(endpoint, payload) {
 // ─────────────────────────────────────────────────────────────────────────────
 // Supabase helpers
 // ─────────────────────────────────────────────────────────────────────────────
+// NOTE: Run this SQL in Supabase if not done:
+// ALTER TABLE users ADD COLUMN IF NOT EXISTS status text DEFAULT 'approved';
+// UPDATE users SET status = 'approved' WHERE status IS NULL;
 const db = {
   // FACTORIES
   async getFactories()          { const { data } = await supabase.from("factories").select("*").order("name"); return data || []; },
@@ -194,6 +197,9 @@ const db = {
 
   // USERS
   async getUsers()              { const { data } = await supabase.from("users").select("*").order("full_name"); return data || []; },
+  async getPendingUsers()        { const { data } = await supabase.from("users").select("*").eq("status", "pending").order("full_name"); return data || []; },
+  async approveUser(id)          { const { data } = await supabase.from("users").update({ status: "approved" }).eq("id", id).select().single(); return data; },
+  async rejectUser(id)           { await supabase.from("users").delete().eq("id", id); },
   async upsertUser(u)           { const { data } = await supabase.from("users").upsert(u).select().single(); return data; },
   async deleteUser(id)          { await supabase.from("users").delete().eq("id", id); },
 
@@ -472,6 +478,15 @@ function LoginScreen({ onLogin }) {
     const { data, error: err } = await supabase.auth.signInWithPassword({ email, password });
     setLoading(false);
     if (err) { setError(err.message); return; }
+    // Check if user is pending approval
+    const { data: userRow } = await supabase.from("users").select("status").eq("email", email).maybeSingle();
+    if (userRow?.status === "pending") {
+      await supabase.auth.signOut();
+      setError(loginLang === "zh"
+        ? "您的账户正在等待管理员审批，请稍后再试。"
+        : "Your account is pending admin approval. Please try again later.");
+      return;
+    }
     onLogin(data.session);
   }
 
@@ -482,11 +497,15 @@ function LoginScreen({ onLogin }) {
     const { data, error: err } = await supabase.auth.signUp({ email, password, options: { data: { full_name: name } } });
     setLoading(false);
     if (err) { setError(err.message); return; }
-    await supabase.from("users").upsert({
-      id: "U-" + data.user.id.slice(0, 8).toUpperCase(),
-      full_name: name, email, role: "user",
-    });
-    setInfo("Account created! Check your email to confirm, then log in.");
+    if (data?.user) {
+      await supabase.from("users").upsert({
+        id: "U-" + data.user.id.slice(0, 8).toUpperCase(),
+        full_name: name, email, role: "user", status: "pending",
+      });
+    }
+    setInfo(loginLang === "zh"
+      ? "账户申请已提交！请等待管理员审批后方可登录。"
+      : "Account request submitted! Please wait for admin approval before logging in.");
     setMode("login");
   }
 
@@ -509,7 +528,7 @@ function LoginScreen({ onLogin }) {
 
       <div className="w-full max-w-sm bg-slate-800 rounded-2xl shadow-2xl p-6 border border-slate-700">
         <div className="flex rounded-xl bg-slate-700 p-1 mb-6">
-          {[["login", t("signIn")], ["signup", t("signUp")]].map(([v, l]) => (
+          {[["login", t("signIn")], ["signup", loginLang === "zh" ? "创建账户" : "Create an Account"]].map(([v, l]) => (
             <button key={v} onClick={() => { setMode(v); setError(""); setInfo(""); }}
               className={`flex-1 py-2 rounded-lg text-sm font-medium transition-all ${mode === v ? "bg-amber-500 text-white shadow" : "text-slate-400 hover:text-white"}`}>
               {l}
@@ -541,7 +560,7 @@ function LoginScreen({ onLogin }) {
           <button type="submit" disabled={loading}
             className="w-full h-12 bg-amber-500 hover:bg-amber-600 disabled:opacity-50 text-white font-semibold rounded-xl transition-all flex items-center justify-center gap-2">
             {loading ? <span className="animate-spin">⏳</span> : null}
-            {mode === "login" ? t("signIn") : (loginLang === "zh" ? "创建账户" : "Create Account")}
+            {mode === "login" ? t("signIn") : (loginLang === "zh" ? "创建账户" : "Create an Account")}
           </button>
         </form>
 
@@ -668,10 +687,28 @@ export default function App() {
   // 4. Polling fallback for notifications (in case Realtime is not enabled in Supabase)
   const lastMsgCountRef = useRef(null);
   const lastDevCountRef = useRef(null);
+  const lastPendingRef  = useRef(null);
   useEffect(() => {
     if (!session || !currentUser) return;
     const poll = async () => {
       try {
+        // Check for pending users (admin only)
+        if (currentUser?.role === "admin") {
+          const allUsers = await db.getUsers();
+          const pending = allUsers.filter(u => u.status === "pending");
+          const prevPending = lastPendingRef.current;
+          if (prevPending !== null && pending.length > prevPending) {
+            const newPending = allUsers.filter(u => u.status === "pending").slice(-(pending.length - prevPending));
+            newPending.forEach(u => {
+              addNotification(`New signup request: ${u.full_name} (${u.email})`, null, "pending");
+            });
+            setUsers(allUsers);
+          } else if (prevPending === null) {
+            setUsers(allUsers);
+          }
+          lastPendingRef.current = pending.length;
+        }
+
         const allDevs = await db.getDevs();
         if (allDevs) {
           // Count total messages across all relevant devs
@@ -699,7 +736,7 @@ export default function App() {
         }
       } catch(e) {}
     };
-    const interval = setInterval(poll, 30000); // poll every 30s
+    const interval = setInterval(poll, 5000); // poll every 5s
     return () => clearInterval(interval);
   }, [session, currentUser]);
 
@@ -877,9 +914,13 @@ export default function App() {
                       ? <p className="text-center text-slate-400 text-sm py-6">{t("noNotifications")}</p>
                       : notifications.map(n => (
                           <button key={n.id} onClick={() => {
+                            setNotifications(prev => prev.filter(x => x.id !== n.id));
                             setShowNotifs(false);
-                            if (n.devId) { setDetail({ type: "dev", id: n.devId }); }
+                            if (n.type === "chat" && n.devId) { setDetail({ type: "dev", id: n.devId }); }
+                            else if (n.type === "dev" && n.devId) { setDetail({ type: "dev", id: n.devId }); }
                             else if (n.type === "visit") goPage("visits");
+                            else if (n.type === "factory") goPage("factories");
+                            else if (n.type === "pending") goPage("users");
                             setNotifications(prev => prev.filter(x => x.id !== n.id));
                           }}
                             className="w-full text-left px-4 py-3 hover:bg-slate-50 border-b border-slate-50 transition-colors">
@@ -940,10 +981,10 @@ function DashboardPage({ visits, devs, factories, setPage, needsFollowUp, onView
   const openCount    = devs.filter((d) => d.status === "open" || d.status === "in_progress").length;
 
   const stats = [
-    !isSupplier && { label: t("totalVisits"),    value: visits.length,        color: "blue" },
-    { label: t("activeDevs"),     value: openCount,            color: "amber" },
-    isAdmin && { label: t("factories"),       value: factories.length,     color: "emerald" },
-    { label: t("needsFollowUp"), value: needsFollowUp.length, color: needsFollowUp.length > 0 ? "red" : "slate" },
+    !isSupplier && { label: t("totalVisits"),    value: visits.length,        color: "blue",    onClick: () => setPage("visits") },
+    { label: t("activeDevs"),     value: openCount,            color: "amber",   onClick: () => setPage("developments") },
+    isAdmin && { label: t("factories"),       value: factories.length,     color: "emerald", onClick: () => setPage("factories") },
+    { label: t("needsFollowUp"), value: needsFollowUp.length, color: needsFollowUp.length > 0 ? "red" : "slate", onClick: () => setPage("developments") },
   ].filter(Boolean);
 
   return (
@@ -951,8 +992,9 @@ function DashboardPage({ visits, devs, factories, setPage, needsFollowUp, onView
       <header className="bg-slate-800 text-white">
         <div className="max-w-5xl mx-auto px-4 sm:px-6 py-4">
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-            {stats.map(({ label, value, color }) => (
-              <div key={label} className="bg-white/10 rounded-xl p-3 border border-white/10">
+            {stats.map(({ label, value, color, onClick }) => (
+              <div key={label} onClick={onClick}
+                className={`bg-white/10 rounded-xl p-3 border border-white/10 transition-all ${onClick ? "cursor-pointer hover:bg-white/20 hover:scale-105" : ""}`}>
                 <p className={`text-3xl font-bold text-${color}-400`}>{value}</p>
                 <p className="text-slate-300 text-xs mt-0.5">{label}</p>
               </div>
@@ -1091,15 +1133,50 @@ function VisitsPage({ visits, setVisits, factories, currentUser, onView, showToa
   const [search, setSearch]           = useState("");
   const [filterFactory, setFilterFactory] = useState("all");
   const [filterVisitor, setFilterVisitor] = useState("all");
+  const [timeFilter, setTimeFilter]   = useState("all");
+  const [customMonth, setCustomMonth] = useState("");
+  const [customYear, setCustomYear]   = useState("");
   const isAdmin = currentUser?.role === "admin";
 
-  const filtered = visits
-    .filter((v) => filterFactory === "all" || v.factory_id === filterFactory)
+  // Apply factory filter first for stats
+  const factoryFiltered = visits.filter((v) => filterFactory === "all" || v.factory_id === filterFactory);
+
+  // Time filter helper
+  function matchesTime(v) {
+    if (timeFilter === "all") return true;
+    const d = new Date(v.visit_date);
+    const now = new Date();
+    if (timeFilter === "today") {
+      return d.toDateString() === now.toDateString();
+    }
+    if (timeFilter === "week") {
+      const weekAgo = new Date(now); weekAgo.setDate(now.getDate() - 7);
+      return d >= weekAgo;
+    }
+    if (timeFilter === "month" && customMonth) {
+      const [y, m] = customMonth.split("-");
+      return d.getFullYear() === parseInt(y) && d.getMonth() + 1 === parseInt(m);
+    }
+    if (timeFilter === "year" && customYear) {
+      return d.getFullYear() === parseInt(customYear);
+    }
+    return true;
+  }
+
+  const filtered = factoryFiltered
+    .filter(matchesTime)
     .filter((v) => filterVisitor === "all" || v.visitor_name === filterVisitor)
     .filter((v) => !search || [v.order_number, v.item, v.factory_name, v.purpose, v.visitor_name]
       .some((x) => x?.toLowerCase().includes(search.toLowerCase())));
 
+  // Stats based on factory filter
+  const statsTotal = factoryFiltered.length;
+  const statsToday = factoryFiltered.filter(v => new Date(v.visit_date).toDateString() === new Date().toDateString()).length;
+  const statsWeek  = factoryFiltered.filter(v => daysAgo(v.visit_date) <= 7).length;
+  const statsFactories = [...new Set(factoryFiltered.map(v => v.factory_id))].length;
+
   const visitors = [...new Set(visits.map((v) => v.visitor_name).filter(Boolean))];
+  const years = [...new Set(visits.map(v => new Date(v.visit_date).getFullYear()))].sort((a,b) => b-a);
 
   async function save(data) {
     const isNew = !data.id;
@@ -1133,9 +1210,15 @@ function VisitsPage({ visits, setVisits, factories, currentUser, onView, showToa
               {Icon.plus} Log New Visit
             </Btn>
           </div>
-          <div className="grid grid-cols-3 gap-3 mt-6">
-            {[["Total Visits", visits.length], ["This Week", visits.filter((v) => daysAgo(v.visit_date) <= 7).length], ["Factories", [...new Set(visits.map((v) => v.factory_id))].length]].map(([label, value]) => (
-              <div key={label} className="bg-white/10 rounded-xl p-4 border border-white/10">
+          <div className="grid grid-cols-4 gap-3 mt-6">
+            {[
+              { label: "Total", value: statsTotal, filter: "all" },
+              { label: "Today", value: statsToday, filter: "today" },
+              { label: "This Week", value: statsWeek, filter: "week" },
+              { label: "Factories", value: statsFactories, filter: null },
+            ].map(({ label, value, filter }) => (
+              <div key={label} onClick={() => filter !== null && setTimeFilter(filter)}
+                className={`rounded-xl p-4 border transition-all ${filter !== null ? "cursor-pointer hover:bg-white/20 hover:scale-105" : ""} ${timeFilter === filter && filter !== null ? "bg-amber-500/30 border-amber-400" : "bg-white/10 border-white/10"}`}>
                 <p className="text-2xl font-bold">{value}</p>
                 <p className="text-slate-300 text-xs mt-0.5">{label}</p>
               </div>
@@ -1152,7 +1235,7 @@ function VisitsPage({ visits, setVisits, factories, currentUser, onView, showToa
         )}
         {!showForm && (
           <>
-            <div className="flex flex-col sm:flex-row gap-3 mb-5">
+            <div className="flex flex-col sm:flex-row gap-3 mb-3">
               <div className="relative flex-1">
                 <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400">{Icon.search}</span>
                 <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search visits…" className="pl-11" />
@@ -1165,6 +1248,29 @@ function VisitsPage({ visits, setVisits, factories, currentUser, onView, showToa
                 <option value="all">All Visitors</option>
                 {visitors.map((v) => <option key={v} value={v}>{v}</option>)}
               </Select>
+            </div>
+            <div className="flex flex-wrap gap-2 mb-5 items-center">
+              {[["all","All Time"],["today","Today"],["week","This Week"]].map(([v,l]) => (
+                <button key={v} onClick={() => setTimeFilter(v)}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all border ${timeFilter === v ? "bg-amber-500 text-white border-amber-500" : "bg-white text-slate-600 border-slate-200 hover:border-amber-400"}`}>{l}</button>
+              ))}
+              <div className="flex items-center gap-1.5">
+                <span className="text-xs text-slate-500">Month:</span>
+                <input type="month" value={customMonth} onChange={e => { setCustomMonth(e.target.value); setCustomYear(""); setTimeFilter("month"); }}
+                  className="h-8 px-2 text-xs border border-slate-200 rounded-lg focus:outline-none focus:border-amber-400" />
+              </div>
+              <div className="flex items-center gap-1.5">
+                <span className="text-xs text-slate-500">Year:</span>
+                <select value={customYear} onChange={e => { setCustomYear(e.target.value); setCustomMonth(""); setTimeFilter(e.target.value ? "year" : "all"); }}
+                  className="h-8 px-2 text-xs border border-slate-200 rounded-lg focus:outline-none focus:border-amber-400">
+                  <option value="">—</option>
+                  {years.map(y => <option key={y} value={y}>{y}</option>)}
+                </select>
+              </div>
+              {timeFilter !== "all" && (
+                <button onClick={() => { setTimeFilter("all"); setCustomMonth(""); setCustomYear(""); }}
+                  className="text-xs text-red-400 hover:text-red-600 underline">Clear filter</button>
+              )}
             </div>
             {filtered.length === 0
               ? <EmptyState icon={Icon.clipboard} title={t("noVisitsFound")} subtitle={t("logFirstVisit")}
@@ -1493,12 +1599,22 @@ function DevelopmentsPage({ devs, setDevs, factories, users, currentUser, onView
       return d.status === "open" || d.status === "in_progress";
     })
     .filter((d) => filterFactory === "all" || d.factory_ids?.includes(filterFactory))
+    .filter((d) => filterUser === "all" || d.team_member_name === filterUser)
     .filter((d) => !search || [d.title, d.client_name, ...(d.factory_names || []), d.team_member_name, d.material]
       .some((x) => x?.toLowerCase().includes(search.toLowerCase())))
-    .sort((a, b) => sortBy === "title" ? (a.title || "").localeCompare(b.title || "") : new Date(b.created_date) - new Date(a.created_date));
+    .sort((a, b) => {
+      if (sortBy === "title") return (a.title || "").localeCompare(b.title || "");
+      if (sortBy === "user") return (a.team_member_name || "").localeCompare(b.team_member_name || "");
+      return new Date(b.created_date) - new Date(a.created_date);
+    });
 
-  const openCount = devs.filter((d) => d.status === "open" || d.status === "in_progress").length;
-  const doneCount = devs.filter((d) => d.status === "completed").length;
+  const [filterUser, setFilterUser] = useState("all");
+  const allUsers = [...new Set(devs.map(d => d.team_member_name).filter(Boolean))];
+
+  // Factory-aware stats
+  const factoryDevs = filterFactory === "all" ? devs : devs.filter(d => d.factory_ids?.includes(filterFactory));
+  const openCount = factoryDevs.filter((d) => d.status === "open" || d.status === "in_progress").length;
+  const doneCount = factoryDevs.filter((d) => d.status === "completed").length;
 
   async function saveDev(data, isNew) {
     if (isNew) {
@@ -1555,10 +1671,11 @@ function DevelopmentsPage({ devs, setDevs, factories, users, currentUser, onView
             </Btn>
           </div>
           <div className="grid grid-cols-3 gap-3 mt-6">
-            {[["Active", openCount], ["Completed", doneCount], ["Total", devs.length]].map(([label, value]) => (
-              <div key={label} className="bg-white/10 rounded-xl p-4 border border-white/10">
+            {[[t("active"), openCount, "open"], [t("completed"), doneCount, "completed"], ["Total", factoryDevs.length, null]].map(([label, value, tabTarget]) => (
+              <div key={label} onClick={() => tabTarget && setTab(tabTarget)}
+                className={`rounded-xl p-4 border transition-all ${tabTarget ? "cursor-pointer hover:bg-white/20 hover:scale-105" : ""} bg-white/10 border-white/10`}>
                 <p className="text-2xl font-bold">{value}</p>
-                <p className="text-slate-300 text-xs mt-0.5">{label}</p>
+                <p className="text-slate-300 text-xs mt-0.5">{label}{filterFactory !== "all" ? " *" : ""}</p>
               </div>
             ))}
           </div>
@@ -1588,10 +1705,17 @@ function DevelopmentsPage({ devs, setDevs, factories, users, currentUser, onView
                 <option value="all">All Factories</option>
                 {factories.map((f) => <option key={f.id} value={f.id}>{f.name}</option>)}
               </Select>
-              <Select value={sortBy} onChange={setSortBy} className="sm:w-36">
+              <Select value={sortBy} onChange={setSortBy} className="sm:w-40">
                 <option value="created_date">Newest first</option>
                 <option value="title">Name A-Z</option>
+                {isAdmin && <option value="user">By Team Member</option>}
               </Select>
+              {isAdmin && (
+                <Select value={filterUser} onChange={setFilterUser} className="sm:w-44">
+                  <option value="all">All Team Members</option>
+                  {allUsers.map(u => <option key={u} value={u}>{u}</option>)}
+                </Select>
+              )}
             </div>
             {filtered.length === 0
               ? <EmptyState icon={Icon.flask} title={t("noDevsFound")} subtitle={t("createFirstDev")}
@@ -2311,7 +2435,26 @@ function UsersPage({ users, setUsers, factories, currentUser, showToast, askConf
   const [newPassword, setNewPassword] = useState("");
   const [newRole, setNewRole]         = useState("user");
   const [addingUser, setAddingUser]   = useState(false);
+  const [usersTab, setUsersTab]       = useState("active");
   const notAdmin = currentUser?.role !== "admin";
+
+  const pendingUsers  = users.filter(u => u.status === "pending");
+  const activeUsers   = users.filter(u => u.status !== "pending");
+
+  async function approveUser(u) {
+    const updated = { ...u, status: "approved" };
+    const saved = await db.approveUser(u.id);
+    if (saved) setUsers(p => p.map(x => x.id === u.id ? { ...x, status: "approved" } : x));
+    showToast(`✓ ${u.full_name} approved — they can now log in.`);
+  }
+
+  async function rejectUser(u) {
+    askConfirm(`Reject and delete ${u.full_name}? They will not be able to log in.`, async () => {
+      await db.deleteUser(u.id);
+      setUsers(p => p.filter(x => x.id !== u.id));
+      showToast(`${u.full_name} rejected and removed.`);
+    });
+  }
 
   function startEdit(u) {
     setEditingId(u.id); setEditName(u.full_name || ""); setEditEmail(u.email || "");
@@ -2377,6 +2520,28 @@ function UsersPage({ users, setUsers, factories, currentUser, showToast, askConf
           <div className="bg-orange-50 border border-orange-200 rounded-2xl p-5 mb-6 flex items-center gap-4">
             <span className="text-orange-500 flex-shrink-0">{Icon.alert}</span>
             <p className="text-sm text-orange-800 font-medium">Read-only view. Only administrators can edit users.</p>
+          </div>
+        )}
+        {pendingUsers.length > 0 && !notAdmin && (
+          <div className="mb-6 bg-orange-50 border-2 border-orange-300 rounded-2xl p-5">
+            <div className="flex items-center gap-2 mb-4">
+              <span className="text-2xl">⏳</span>
+              <span className="text-orange-700 font-bold text-base">{pendingUsers.length} Account Request{pendingUsers.length > 1 ? "s" : ""} Pending Approval</span>
+            </div>
+            <div className="space-y-3">
+              {pendingUsers.map(u => (
+                <div key={u.id} className="flex items-center justify-between bg-white rounded-xl px-4 py-3 shadow-sm border border-orange-100">
+                  <div>
+                    <p className="font-semibold text-slate-800">{u.full_name}</p>
+                    <p className="text-slate-500 text-xs">{u.email} · Requested access</p>
+                  </div>
+                  <div className="flex gap-2">
+                    <button onClick={() => approveUser(u)} className="px-4 py-1.5 bg-green-500 hover:bg-green-600 text-white text-xs font-semibold rounded-lg transition-colors">✓ Approve</button>
+                    <button onClick={() => rejectUser(u)} className="px-4 py-1.5 bg-red-100 hover:bg-red-200 text-red-700 text-xs font-semibold rounded-lg transition-colors">✕ Reject</button>
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
         )}
         {showAddUser && !notAdmin && (
