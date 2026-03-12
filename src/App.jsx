@@ -174,10 +174,29 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_ANON);
 // ─────────────────────────────────────────────────────────────────────────────
 // STORAGE UPLOAD — uploads image to Supabase Storage, returns public URL
 // ─────────────────────────────────────────────────────────────────────────────
+// Compress image to max 1200px wide and ~80% quality before uploading
+async function compressImage(file, maxWidth = 1200, quality = 0.82) {
+  return new Promise((resolve) => {
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      const scale = Math.min(1, maxWidth / img.width);
+      const canvas = document.createElement("canvas");
+      canvas.width  = Math.round(img.width  * scale);
+      canvas.height = Math.round(img.height * scale);
+      canvas.getContext("2d").drawImage(img, 0, 0, canvas.width, canvas.height);
+      canvas.toBlob((blob) => resolve(blob || file), "image/jpeg", quality);
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); resolve(file); };
+    img.src = url;
+  });
+}
+
 async function uploadImage(file) {
-  const ext = file.name.split(".").pop() || "jpg";
-  const path = `${Date.now()}_${Math.random().toString(36).slice(2)}.${ext}`;
-  const { error } = await supabase.storage.from("photos").upload(path, file, { upsert: false });
+  const compressed = await compressImage(file);
+  const path = `${Date.now()}_${Math.random().toString(36).slice(2)}.jpg`;
+  const { error } = await supabase.storage.from("photos").upload(path, compressed, { upsert: false, contentType: "image/jpeg" });
   if (error) throw error;
   const { data } = supabase.storage.from("photos").getPublicUrl(path);
   return data.publicUrl;
@@ -811,6 +830,14 @@ export default function App() {
     (d) => (d.status === "open" || d.status === "in_progress") && (!d.updates || d.updates.length === 0) && daysAgo(d.created_date) >= 3
   );
 
+  // Developments with target date within 7 days (or already overdue)
+  const dueSoon = devs.filter((d) => {
+    if (!d.internal_estimated_date) return false;
+    if (d.status === "completed" || d.status === "cancelled") return false;
+    const daysLeft = Math.ceil((new Date(d.internal_estimated_date) - new Date()) / 86400000);
+    return daysLeft <= 7;
+  }).sort((a, b) => new Date(a.internal_estimated_date) - new Date(b.internal_estimated_date));
+
   async function notifyFactory(dev, factoryId) {
     if (!BACKEND_URL) return;
     const factory = getFactory(factoryId);
@@ -871,9 +898,10 @@ export default function App() {
       ? devs.filter(d => d.factory_ids?.includes(currentUser?.factory_id))
       : devs.filter(d => d.team_member_id === currentUser?.id);
     const dashFollowUp = needsFollowUp.filter(d => dashDevs.find(x => x.id === d.id));
+    const dashDueSoon  = dueSoon.filter(d => dashDevs.find(x => x.id === d.id));
     content = (
       <DashboardPage visits={dashVisits} devs={dashDevs} factories={factories} setPage={goPage}
-        needsFollowUp={dashFollowUp} onViewDev={(id) => setDetail({ type: "dev", id })}
+        needsFollowUp={dashFollowUp} dueSoon={dashDueSoon} onViewDev={(id) => setDetail({ type: "dev", id })}
         onViewVisit={(id) => setDetail({ type: "visit", id })} currentUser={currentUser} />
     );
   } else if (page === "visits") {
@@ -1017,7 +1045,7 @@ export default function App() {
 // ─────────────────────────────────────────────────────────────────────────────
 // Dashboard
 // ─────────────────────────────────────────────────────────────────────────────
-function DashboardPage({ visits, devs, factories, setPage, needsFollowUp, onViewDev, onViewVisit, currentUser }) {
+function DashboardPage({ visits, devs, factories, setPage, needsFollowUp, dueSoon, onViewDev, onViewVisit, currentUser }) {
   const isAdmin = currentUser?.role === "admin";
   const isSupplier = currentUser?.role === "supplier";
   const [bannerTab, setBannerTab] = useState("visits");
@@ -1063,6 +1091,27 @@ function DashboardPage({ visits, devs, factories, setPage, needsFollowUp, onView
             <span className="text-orange-500 flex-shrink-0">{Icon.alert}</span>
             <p className="text-sm text-orange-800 font-medium">{needsFollowUp.length} {needsFollowUp.length > 1 ? t("developments") : t("development")} {t("open3Days")}</p>
             <button onClick={() => setPage("developments")} className="ml-auto text-xs font-semibold text-orange-600 hover:underline whitespace-nowrap">{t("viewAll")} →</button>
+          </div>
+        )}
+        {dueSoon?.length > 0 && (
+          <div className="bg-red-50 border border-red-200 rounded-2xl p-4 space-y-2">
+            <div className="flex items-center gap-2 mb-1">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="text-red-500 flex-shrink-0"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+              <span className="text-sm font-semibold text-red-800">{dueSoon.length} development{dueSoon.length > 1 ? "s" : ""} due within 7 days</span>
+            </div>
+            {dueSoon.map((d) => {
+              const daysLeft = Math.ceil((new Date(d.internal_estimated_date) - new Date()) / 86400000);
+              const overdue  = daysLeft < 0;
+              return (
+                <div key={d.id} onClick={() => onViewDev(d.id)}
+                  className="flex items-center justify-between bg-white rounded-xl px-3 py-2 cursor-pointer hover:bg-red-50 transition-colors border border-red-100">
+                  <span className="text-sm font-medium text-slate-700 truncate">{d.title}</span>
+                  <span className={`ml-3 text-xs font-semibold whitespace-nowrap px-2 py-0.5 rounded-full ${overdue ? "bg-red-100 text-red-700" : "bg-amber-100 text-amber-700"}`}>
+                    {overdue ? `${Math.abs(daysLeft)}d overdue` : daysLeft === 0 ? "Due today" : `${daysLeft}d left`}
+                  </span>
+                </div>
+              );
+            })}
           </div>
         )}
         {!isSupplier ? (
@@ -1415,6 +1464,7 @@ function VisitForm({ visit, factories, currentUser, onSave, onCancel }) {
     purpose: "", visit_date: new Date().toISOString(),
     visitor_name: currentUser?.full_name || "",
     picture_url: "", additional_pictures: [], location_address: "", latitude: null, longitude: null,
+    private_notes: "",
   });
   const [locating, setLocating] = useState(!isEdit);
   const [locError, setLocError] = useState("");
@@ -1520,6 +1570,13 @@ function VisitForm({ visit, factories, currentUser, onSave, onCancel }) {
             ))}
           </div>
         )}
+      </div>
+      <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-2">
+        <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide flex items-center gap-1.5">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+          Private Notes — only visible to you
+        </p>
+        <Textarea value={form.private_notes || ""} onChange={(e) => set("private_notes", e.target.value)} placeholder="Personal notes, reminders, observations…" rows={3} />
       </div>
     </FormCard>
   );
@@ -1634,6 +1691,15 @@ function VisitDetailPage({ visitId, visits, setVisits, factories, onBack, curren
                       <p className="text-sm text-slate-800 mt-0.5 flex items-start gap-1.5">{icon} {val}</p>
                     </div>
                   ))}
+                  {visit.private_notes && (visit.visitor_name === currentUser?.full_name || currentUser?.role === "admin") && (
+                    <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 mt-2">
+                      <label className="text-xs text-slate-500 uppercase tracking-wide font-medium flex items-center gap-1">
+                        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+                        Private Notes
+                      </label>
+                      <p className="text-sm text-slate-700 mt-1 whitespace-pre-wrap">{visit.private_notes}</p>
+                    </div>
+                  )}
                 </div>
               </Card>
               {(visit.latitude && visit.longitude) || visit.location_address ? (
