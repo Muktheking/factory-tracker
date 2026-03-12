@@ -1800,13 +1800,19 @@ function DevCard({ dev, onEdit, onDelete, onView }) {
   const isCompleted = dev.status === "completed";
   const activeDays  = daysAgo(dev.created_date);
 
-  // For completed devs, calculate days from created to last update (completion date)
   const completedDate = isCompleted && dev.updates?.length > 0
     ? dev.updates[dev.updates.length - 1]?.created_date
     : null;
   const daysToComplete = completedDate
     ? Math.round((new Date(completedDate) - new Date(dev.created_date)) / 86400000)
     : isCompleted ? activeDays : null;
+
+  // Get the latest factory estimated finish date from updates
+  const latestEstFinish = dev.updates?.slice().reverse().find(u => u.estimated_finish_date)?.estimated_finish_date || null;
+  const targetDate = dev.internal_estimated_date || null;
+
+  // Is target date overdue?
+  const targetOverdue = targetDate && new Date(targetDate) < new Date() && !isCompleted;
 
   return (
     <Card className={`shadow-sm hover:shadow-lg transition-all overflow-hidden ${needsFollowUp ? "border-l-4 border-l-orange-400" : ""}`}>
@@ -1836,6 +1842,22 @@ function DevCard({ dev, onEdit, onDelete, onView }) {
             {dev.team_member_name && <div className="flex items-center gap-1">{Icon.user} {dev.team_member_name}</div>}
             <div className="flex items-center gap-1">{Icon.calendar} {fmtDate(dev.created_date)}</div>
           </div>
+          {(targetDate || latestEstFinish) && (
+            <div className="mt-2 flex flex-wrap gap-2">
+              {targetDate && (
+                <div className={`flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-medium ${targetOverdue ? "bg-red-50 text-red-700 border border-red-200" : "bg-amber-50 text-amber-700 border border-amber-200"}`}>
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                  <span className="opacity-70">Target:</span> {fmtDate(targetDate)}
+                </div>
+              )}
+              {latestEstFinish && (
+                <div className="flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-medium bg-purple-50 text-purple-700 border border-purple-200">
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+                  <span className="opacity-70">Factory Est:</span> {fmtDate(latestEstFinish)}
+                </div>
+              )}
+            </div>
+          )}
           <div className="mt-2 flex justify-end gap-1">
             {onEdit   && <Btn variant="ghost" size="sm" onClick={(e) => { e.stopPropagation(); onEdit(dev);    }}>{Icon.edit}</Btn>}
             {onDelete && <Btn variant="ghost" size="sm" onClick={(e) => { e.stopPropagation(); onDelete(dev.id); }}>{Icon.trash}</Btn>}
@@ -1939,6 +1961,7 @@ function DevDetailPage({ devId, devs, setDevs, factories, getFactory, getUser, o
   const [showEdit, setShowEdit]           = useState(false);
   const [showUpdateForm, setShowUpdateForm] = useState(false);
   const [activeTab, setActiveTab]         = useState("updates");
+  const [lightbox, setLightbox]           = useState(null);
   const dev = devs.find((d) => d.id === devId);
   if (!dev) return null;
   const isAdmin    = currentUser?.role === "admin";
@@ -2022,7 +2045,7 @@ function DevDetailPage({ devId, devs, setDevs, factories, getFactory, getUser, o
             <div className="lg:col-span-2 space-y-4">
               {dev.picture_url && (
                 <Card className="overflow-hidden shadow-sm">
-                  <img src={dev.picture_url} alt="Reference" className="w-full object-cover max-h-72" />
+                  <img src={dev.picture_url} alt="Reference" className="w-full object-cover max-h-72 cursor-pointer hover:opacity-90 transition-opacity" onClick={() => setLightbox(dev.picture_url)} />
                 </Card>
               )}
               {dev.additional_pictures?.length > 0 && (
@@ -2031,11 +2054,17 @@ function DevDetailPage({ devId, devs, setDevs, factories, getFactory, getUser, o
                   <div className="grid grid-cols-4 gap-2">
                     {dev.additional_pictures.map((p, i) => (
                       <div key={i} className="aspect-square rounded-xl overflow-hidden">
-                        <img src={p} alt="" className="w-full h-full object-cover cursor-pointer" onClick={() => window.open(p, "_blank")} />
+                        <img src={p} alt="" className="w-full h-full object-cover cursor-pointer hover:opacity-90 transition-opacity" onClick={() => setLightbox(p)} />
                       </div>
                     ))}
                   </div>
                 </Card>
+              )}
+              {lightbox && (
+                <div className="fixed inset-0 z-50 bg-black/90 flex items-center justify-center p-4" onClick={() => setLightbox(null)}>
+                  <img src={lightbox} alt="" className="max-w-full max-h-full object-contain rounded-xl shadow-2xl" onClick={e => e.stopPropagation()} />
+                  <button onClick={() => setLightbox(null)} className="absolute top-4 right-4 w-10 h-10 rounded-full bg-white/20 hover:bg-white/30 text-white flex items-center justify-center text-xl transition-colors">✕</button>
+                </div>
               )}
               <Card className="shadow-sm overflow-hidden">
                 <div className="flex border-b border-slate-100">
@@ -2575,9 +2604,9 @@ function UsersPage({ users, setUsers, factories, currentUser, showToast, askConf
           </div>
           <div className="grid grid-cols-3 gap-3">
             {[
-              { label: "Admins",    count: users.filter(u => u.role === "admin").length,    color: "bg-purple-500/20 border-purple-500/30", text: "text-purple-200" },
-              { label: "Users",     count: users.filter(u => u.role === "user").length,     color: "bg-blue-500/20 border-blue-500/30",     text: "text-blue-200" },
-              { label: "Suppliers", count: users.filter(u => u.role === "supplier").length, color: "bg-orange-500/20 border-orange-500/30", text: "text-orange-200" },
+              { label: lang === "zh" ? "管理员" : "Admins",   count: users.filter(u => u.role === "admin").length,    color: "bg-purple-500/20 border-purple-500/30", text: "text-purple-200" },
+              { label: lang === "zh" ? "用户" : "Users",      count: users.filter(u => u.role === "user").length,     color: "bg-blue-500/20 border-blue-500/30",   text: "text-blue-200" },
+              { label: lang === "zh" ? "供应商" : "Suppliers", count: users.filter(u => u.role === "supplier").length, color: "bg-orange-500/20 border-orange-500/30", text: "text-orange-200" },
             ].map(({ label, count, color, text }) => (
               <div key={label} className={`rounded-xl p-4 border ${color}`}>
                 <p className="text-2xl font-bold text-white">{count}</p>
