@@ -1083,8 +1083,8 @@ function VisitDetailPage({ visitId, visits, setVisits, factories, onBack, curren
                   </div>
                   {visit.latitude && visit.longitude ? (
                     <img 
-                      src={`https://restapi.amap.com/v3/staticmap?location=${visit.longitude},${visit.latitude}&zoom=15&size=600*300&markers=mid,,A:${visit.longitude},${visit.latitude}&key=a3fa54b4926b09660455bbb6c286c12a`}
-                      alt="map" style={{ width: "100%", display: "block" }} />
+                      src={`https://restapi.amap.com/v3/staticmap?location=${visit.longitude},${visit.latitude}&zoom=15&size=750*400&markers=large,0xFF0000,A:${visit.longitude},${visit.latitude}&key=a3fa54b4926b09660455bbb6c286c12a`}
+                      alt="map" style={{ width: "100%", display: "block", maxHeight: "250px", objectFit: "cover" }} />
                   ) : (
                     <div className="p-4 text-sm text-slate-600 flex items-start gap-2">{Icon.pin} {resolvedAddress}</div>
                   )}
