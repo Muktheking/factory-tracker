@@ -912,25 +912,14 @@ export default function App() {
           onCancel={() => setConfirm(null)} />
       )}
       <header className="fixed top-0 left-0 right-0 z-50 bg-slate-900 shadow-xl">
-        <div className="flex items-center h-14 px-2 sm:px-4 gap-1 sm:gap-2 max-w-6xl mx-auto">
-          <button onClick={() => goPage("dashboard")} className="flex items-center gap-2 mr-2 sm:mr-4 flex-shrink-0">
-            <LokaLogo size={32} />
+        {/* ── Row 1: Logo + Lang + Bell + User ── */}
+        <div className="flex items-center h-12 px-3 sm:px-4 gap-2 max-w-6xl mx-auto">
+          <button onClick={() => goPage("dashboard")} className="flex items-center gap-2 flex-shrink-0">
+            <LokaLogo size={28} />
             <span className="hidden md:block text-white font-semibold text-sm">{t("factoryTrackerTitle")}</span>
           </button>
-          <nav className="flex items-center gap-0.5 sm:gap-1 flex-1 overflow-x-auto">
-            {navItems.map((item) => {
-              const active = !detail && page === item.id;
-              return (
-                <button key={item.id} onClick={() => goPage(item.id)}
-                  className={`flex items-center gap-1.5 px-2.5 sm:px-4 py-2 rounded-lg transition-all text-xs sm:text-sm font-medium whitespace-nowrap flex-shrink-0 ${
-                    active ? "bg-amber-500 text-white shadow-md shadow-amber-500/30" : "text-slate-400 hover:text-white hover:bg-white/10"
-                  }`}>
-                  {item.icon}<span>{item.label}</span>
-                </button>
-              );
-            })}
-          </nav>
-          <div className="flex-shrink-0 flex items-center gap-1.5 ml-2">
+          <div className="flex-1" />
+          <div className="flex-shrink-0 flex items-center gap-1.5">
             {/* Language switcher */}
             <div className="flex items-center bg-white/10 rounded-lg overflow-hidden">
               {["en","zh"].map(l => (
@@ -1003,8 +992,24 @@ export default function App() {
             </button>
           </div>
         </div>
+        {/* ── Row 2: Nav tabs ── */}
+        <div className="border-t border-white/10">
+          <nav className="flex items-center gap-0.5 px-2 max-w-6xl mx-auto overflow-x-auto">
+            {navItems.map((item) => {
+              const active = !detail && page === item.id;
+              return (
+                <button key={item.id} onClick={() => goPage(item.id)}
+                  className={`flex items-center gap-1.5 px-3 py-2.5 transition-all text-xs font-medium whitespace-nowrap flex-shrink-0 border-b-2 ${
+                    active ? "border-amber-500 text-amber-400" : "border-transparent text-slate-400 hover:text-white hover:border-white/30"
+                  }`}>
+                  {item.icon}<span>{item.label}</span>
+                </button>
+              );
+            })}
+          </nav>
+        </div>
       </header>
-      <main className="pt-14">{content}</main>
+      <main className="pt-24">{content}</main>
     </div>
   );
 }
