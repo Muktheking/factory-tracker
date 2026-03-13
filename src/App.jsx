@@ -967,6 +967,16 @@ export default function App() {
     return () => clearInterval(interval);
   }, [session, currentUser]);
 
+  // Fallback polling for devs+visits every 15s — ensures updates show even if Realtime is unreliable
+  useEffect(() => {
+    if (!session || !currentUser) return;
+    const interval = setInterval(() => {
+      db.getDevs().then(setDevs);
+      db.getVisits().then(setVisits);
+    }, 15000);
+    return () => clearInterval(interval);
+  }, [session, currentUser]);
+
   async function signOut() {
     await supabase.auth.signOut();
     setSession(null);
@@ -2261,16 +2271,20 @@ function DevCard({ dev, onEdit, onDelete, onView, hasNewUpdate }) {
               )}
             </div>
           )}
-          <div className="mt-2 flex justify-end gap-1">
+          <div className="mt-2 flex flex-col gap-1">
             {hasNewUpdate && (
-              <span className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-700 text-xs font-semibold border border-emerald-200 mr-auto">
-                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
-                New Update
-              </span>
+              <div className="flex justify-center pb-1">
+                <div className="bg-emerald-500 text-white text-xs font-bold px-4 py-1.5 rounded-full shadow-md flex items-center gap-1.5 animate-pulse">
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                  New Update
+                </div>
+              </div>
             )}
-            {onEdit   && <Btn variant="ghost" size="sm" onClick={(e) => { e.stopPropagation(); onEdit(dev);    }}>{Icon.edit}</Btn>}
-            {onDelete && <Btn variant="ghost" size="sm" onClick={(e) => { e.stopPropagation(); onDelete(dev.id); }}>{Icon.trash}</Btn>}
-            <Btn variant="ghost" size="sm" onClick={onView}>{Icon.eye} {t("view")}</Btn>
+            <div className="flex justify-end gap-1">
+              {onEdit   && <Btn variant="ghost" size="sm" onClick={(e) => { e.stopPropagation(); onEdit(dev);    }}>{Icon.edit}</Btn>}
+              {onDelete && <Btn variant="ghost" size="sm" onClick={(e) => { e.stopPropagation(); onDelete(dev.id); }}>{Icon.trash}</Btn>}
+              <Btn variant="ghost" size="sm" onClick={onView}>{Icon.eye} {t("view")}</Btn>
+            </div>
           </div>
         </div>
       </div>
@@ -2506,6 +2520,12 @@ function DevDetailPage({ devId, devs, setDevs, factories, getFactory, getUser, o
             <div className="flex gap-2 flex-wrap">
               {(dev.status === "open" || dev.status === "in_progress") && (
                 <Btn variant="amber" onClick={() => changeStatus("completed")}>{Icon.check} Mark Complete</Btn>
+              )}
+              {dev.status === "completed" && (
+                <Btn variant="ghost" onClick={() => changeStatus("open")}
+                  className="border border-slate-300 text-slate-300 hover:bg-white/10">
+                  ↩ Reopen
+                </Btn>
               )}
               {isAdmin && (
                 <>
