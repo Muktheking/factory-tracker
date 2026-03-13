@@ -2901,32 +2901,19 @@ function DevDetailPage({ devId, devs, setDevs, factories, getFactory, getUser, o
   const isAdmin    = currentUser?.role === "admin";
   const isSupplier = currentUser?.role === "supplier";
 
-  // Notify supplier when admin/user opens this dev for the first time
+  // Notify supplier when admin/user opens this dev for the first time (tracking in memory only, not status history)
+  const viewedNotifSent = useRef(false);
   useEffect(() => {
     if (!dev || !currentUser || currentUser.role === "supplier" || currentUser.role === "viewer") return;
-    const viewerName = currentUser.full_name || "";
-    const alreadyViewed = (dev.status_history || []).some(
-      h => h.status === "admin_viewed" && h.changed_by === viewerName
-    );
-    if (!alreadyViewed) {
-      const entry = {
-        status: "admin_viewed",
-        changed_by: viewerName,
-        changed_at: new Date().toISOString(),
-        label: `Viewed by ${viewerName}`,
-      };
-      const newHistory = [...(dev.status_history || []), entry];
-      db.upsertDev({ ...dev, status_history: newHistory, updates: undefined, messages: undefined });
-      setDevs(p => p.map(d => d.id === devId ? { ...d, status_history: newHistory } : d));
-      // Notify the supplier
-      if (pushNotif) {
-        const supplierUser = users.find(u => u.role === "supplier" && dev.factory_ids?.includes(u.factory_id));
-        if (supplierUser) {
-          pushNotif(supplierUser.id, "devViewed", {
-            viewer: viewerName,
-            title: dev.title || "",
-          }, devId, "dev");
-        }
+    if (viewedNotifSent.current) return;
+    viewedNotifSent.current = true;
+    if (pushNotif) {
+      const supplierUser = users.find(u => u.role === "supplier" && dev.factory_ids?.includes(u.factory_id));
+      if (supplierUser) {
+        pushNotif(supplierUser.id, "devViewed", {
+          viewer: currentUser.full_name || "Team",
+          title: dev.title || "",
+        }, devId, "dev");
       }
     }
   }, [devId]);
@@ -3186,8 +3173,8 @@ function DevDetailPage({ devId, devs, setDevs, factories, getFactory, getUser, o
                           <p className="text-xs text-slate-500 mt-1">by {dev.team_member_name || "Unknown"}</p>
                         </div>
                       </div>
-                      {/* Remaining history entries */}
-                      {[...(dev.status_history || [])].map((h, i) => {
+                      {/* Remaining history entries — skip internal admin_viewed entries */}
+                      {[...(dev.status_history || [])].filter(h => h.status !== "admin_viewed").map((h, i) => {
                         const colors = {
                           open: "bg-blue-100 text-blue-700",
                           pending: "bg-slate-100 text-slate-600",
