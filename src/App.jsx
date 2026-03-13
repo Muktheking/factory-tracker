@@ -538,24 +538,23 @@ function LoginScreen({ onLogin }) {
   async function handleLogin(e) {
     e.preventDefault();
     setError(""); setLoading(true);
-    // Check status BEFORE attempting auth login to avoid session race condition
-    const { data: userRow } = await supabase.from("users").select("status").eq("email", email).maybeSingle();
-    if (!userRow) {
+    // Check status BEFORE attempting auth — uses SECURITY DEFINER RPC to bypass RLS
+    const { data: status } = await supabase.rpc("get_user_status", { user_email: email });
+    if (status === null) {
       setLoading(false);
       setError(loginLang === "zh" ? "此账户不存在或已被停用。" : "This account does not exist or has been disabled.");
       return;
     }
-    if (userRow.status === "pending") {
+    if (status === "pending") {
       setLoading(false);
       setError(loginLang === "zh" ? "您的账户正在等待管理员审批，请稍后再试。" : "Your account is pending admin approval. Please try again later.");
       return;
     }
-    if (userRow.status === "blocked") {
+    if (status === "blocked") {
       setLoading(false);
       setError(loginLang === "zh" ? "此账户已被停用，请联系管理员。" : "This account has been disabled. Please contact your admin.");
       return;
     }
-    // Status is approved — now actually sign in
     const { data, error: err } = await supabase.auth.signInWithPassword({ email, password });
     setLoading(false);
     if (err) { setError(err.message); return; }
@@ -832,14 +831,15 @@ export default function App() {
   useEffect(() => {
     async function checkAndSetSession(session) {
       if (!session) { setSession(null); return; }
-      // Require a valid active user row — blocks deleted, pending, and blocked users
-      const { data: userRow } = await supabase.from("users").select("status").eq("email", session.user.email).maybeSingle();
-      if (!userRow || userRow.status === "pending" || userRow.status === "blocked") {
-        await supabase.auth.signOut();
-        setSession(null);
-        return;
-      }
-      setSession(session);
+      try {
+        const { data: status } = await supabase.rpc("get_user_status", { user_email: session.user.email });
+        if (status === null || status === "pending" || status === "blocked") {
+          await supabase.auth.signOut();
+          setSession(null);
+          return;
+        }
+        setSession(session);
+      } catch (e) { setSession(null); }
     }
     // Always re-validate the current session on mount (catches stale sessions)
     supabase.auth.getSession().then(({ data: { session } }) => checkAndSetSession(session));
@@ -995,11 +995,13 @@ export default function App() {
     async function validateSession() {
       const email = session?.user?.email;
       if (!email) return;
-      const { data: userRow } = await supabase.from("users").select("status").eq("email", email).maybeSingle();
-      if (!userRow || userRow.status === "pending" || userRow.status === "blocked") {
-        await supabase.auth.signOut();
-        setSession(null);
-      }
+      try {
+        const { data: status } = await supabase.rpc("get_user_status", { user_email: email });
+        if (status === null || status === "pending" || status === "blocked") {
+          await supabase.auth.signOut();
+          setSession(null);
+        }
+      } catch (e) {}
     }
     validateSession(); // run immediately
     const interval = setInterval(validateSession, 30000);
