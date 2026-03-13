@@ -342,7 +342,7 @@ const db = {
 
   // Notifications
   async getNotifs(userId)       { const { data } = await supabase.from("notifications").select("*").eq("recipient_id", userId).eq("read", false).order("created_at", { ascending: false }).limit(50); return data || []; },
-  async insertNotif(n)          { const { data } = await supabase.from("notifications").insert(n).select().single(); return data; },
+  async insertNotif(n)          { const { data, error } = await supabase.from("notifications").insert(n).select().single(); if (error) console.error("insertNotif failed:", error.message, n); return data; },
   async markNotifRead(id)       { await supabase.from("notifications").update({ read: true }).eq("id", id); },
   async markAllNotifsRead(userId) { await supabase.from("notifications").update({ read: true }).eq("recipient_id", userId).eq("read", false); },
 };
