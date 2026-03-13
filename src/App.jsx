@@ -541,13 +541,13 @@ function LoginScreen({ onLogin }) {
     const { data, error: err } = await supabase.auth.signInWithPassword({ email, password });
     setLoading(false);
     if (err) { setError(err.message); return; }
-    // Check if user is pending approval
+    // Require an active user row — blocks deleted and pending users
     const { data: userRow } = await supabase.from("users").select("status").eq("email", email).maybeSingle();
-    if (userRow?.status === "pending") {
+    if (!userRow || userRow.status === "pending") {
       await supabase.auth.signOut();
       setError(loginLang === "zh"
-        ? "您的账户正在等待管理员审批，请稍后再试。"
-        : "Your account is pending admin approval. Please try again later.");
+        ? (!userRow ? "此账户不存在或已被删除。" : "您的账户正在等待管理员审批，请稍后再试。")
+        : (!userRow ? "This account does not exist or has been removed." : "Your account is pending admin approval. Please try again later."));
       return;
     }
     onLogin(data.session);
@@ -823,9 +823,9 @@ export default function App() {
   useEffect(() => {
     async function checkAndSetSession(session) {
       if (!session) { setSession(null); return; }
-      // Block pending users even if they have a valid auth session
+      // Require a valid active user row — blocks deleted users and pending users
       const { data: userRow } = await supabase.from("users").select("status").eq("email", session.user.email).maybeSingle();
-      if (userRow?.status === "pending") {
+      if (!userRow || userRow.status === "pending") {
         await supabase.auth.signOut();
         setSession(null);
         return;
