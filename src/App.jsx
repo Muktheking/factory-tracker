@@ -646,6 +646,126 @@ function LoginScreen({ onLogin }) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// Global Search Overlay
+// ─────────────────────────────────────────────────────────────────────────────
+function GlobalSearchOverlay({ query, setQuery, visits, devs, factories, onClose, onViewDev, onViewVisit, onViewFactory, currentUser }) {
+  const inputRef = useRef(null);
+  const isSupplier = currentUser?.role === "supplier";
+
+  useEffect(() => {
+    inputRef.current?.focus();
+    const handler = (e) => { if (e.key === "Escape") onClose(); };
+    document.addEventListener("keydown", handler);
+    return () => document.removeEventListener("keydown", handler);
+  }, []);
+
+  const q = query.trim().toLowerCase();
+
+  const matchedDevs = q.length < 2 ? [] : devs.filter(d =>
+    [d.title, d.client_name, d.buyer_name, d.mail_subject, d.material, ...(d.factory_names || []), d.team_member_name, d.id]
+      .some(x => x?.toLowerCase().includes(q))
+  ).slice(0, 6);
+
+  const matchedVisits = (q.length < 2 || isSupplier) ? [] : visits.filter(v =>
+    [v.item, v.purpose, v.order_number, v.factory_name, v.visitor_name]
+      .some(x => x?.toLowerCase().includes(q))
+  ).slice(0, 6);
+
+  const matchedFactories = q.length < 2 ? [] : factories.filter(f =>
+    [f.name, f.address, f.contact_person, f.contact_email]
+      .some(x => x?.toLowerCase().includes(q))
+  ).slice(0, 4);
+
+  const totalResults = matchedDevs.length + matchedVisits.length + matchedFactories.length;
+
+  return (
+    <div className="fixed inset-0 z-[100] flex items-start justify-center pt-20 px-4" onClick={onClose}>
+      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
+      <div className="relative w-full max-w-xl bg-white rounded-2xl shadow-2xl overflow-hidden" onClick={e => e.stopPropagation()}>
+        {/* Search input */}
+        <div className="flex items-center gap-3 px-4 py-3 border-b border-slate-100">
+          <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2} className="text-slate-400 flex-shrink-0"><circle cx="11" cy="11" r="8"/><path strokeLinecap="round" d="m21 21-4.35-4.35"/></svg>
+          <input ref={inputRef} value={query} onChange={e => setQuery(e.target.value)}
+            placeholder="Search developments, visits, factories…"
+            className="flex-1 text-sm text-slate-800 placeholder:text-slate-400 outline-none bg-transparent" />
+          {query && <button onClick={() => setQuery("")} className="text-slate-400 hover:text-slate-600 text-lg leading-none">×</button>}
+          <button onClick={onClose} className="text-xs text-slate-400 hover:text-slate-600 px-2 py-1 rounded border border-slate-200">Esc</button>
+        </div>
+
+        {/* Results */}
+        <div className="max-h-[60vh] overflow-y-auto">
+          {q.length < 2 && (
+            <div className="text-center py-10 text-slate-400 text-sm">Type at least 2 characters to search…</div>
+          )}
+          {q.length >= 2 && totalResults === 0 && (
+            <div className="text-center py-10 text-slate-400 text-sm">No results for "{query}"</div>
+          )}
+
+          {matchedDevs.length > 0 && (
+            <div>
+              <div className="px-4 pt-3 pb-1 text-xs font-semibold text-slate-400 uppercase tracking-wider">Developments</div>
+              {matchedDevs.map(d => (
+                <button key={d.id} onClick={() => onViewDev(d.id)}
+                  className="w-full flex items-center gap-3 px-4 py-3 hover:bg-slate-50 transition-colors text-left">
+                  <div className="w-9 h-9 rounded-lg overflow-hidden bg-slate-100 flex-shrink-0 flex items-center justify-center text-slate-400">
+                    {d.picture_url ? <img src={d.picture_url} alt="" className="w-full h-full object-cover" /> :
+                      <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M20 7H4a2 2 0 00-2 2v10a2 2 0 002 2h16a2 2 0 002-2V9a2 2 0 00-2-2z"/><path strokeLinecap="round" strokeLinejoin="round" d="M16 3H8a2 2 0 00-2 2v2h12V5a2 2 0 00-2-2z"/></svg>}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-slate-800 truncate">{d.title}</p>
+                    <p className="text-xs text-slate-500 truncate">{d.factory_names?.[0]} {d.client_name ? `· ${d.client_name}` : ""}</p>
+                  </div>
+                  <span className={`text-xs px-2 py-0.5 rounded-full ${DEV_STATUS_CSS[d.status]}`}>{DEV_STATUS_LABEL()[d.status]}</span>
+                </button>
+              ))}
+            </div>
+          )}
+
+          {matchedVisits.length > 0 && (
+            <div>
+              <div className="px-4 pt-3 pb-1 text-xs font-semibold text-slate-400 uppercase tracking-wider">Visits</div>
+              {matchedVisits.map(v => (
+                <button key={v.id} onClick={() => onViewVisit(v.id)}
+                  className="w-full flex items-center gap-3 px-4 py-3 hover:bg-slate-50 transition-colors text-left">
+                  <div className="w-9 h-9 rounded-lg overflow-hidden bg-slate-100 flex-shrink-0 flex items-center justify-center text-slate-400">
+                    {v.picture_url ? <img src={v.picture_url} alt="" className="w-full h-full object-cover" /> :
+                      <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/><polyline strokeLinecap="round" strokeLinejoin="round" points="9 22 9 12 15 12 15 22"/></svg>}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-slate-800 truncate">{v.item}</p>
+                    <p className="text-xs text-slate-500 truncate">{v.factory_name} · {fmtDate(v.visit_date)}</p>
+                  </div>
+                  <span className="text-xs text-slate-400">#{v.order_number}</span>
+                </button>
+              ))}
+            </div>
+          )}
+
+          {matchedFactories.length > 0 && (
+            <div>
+              <div className="px-4 pt-3 pb-1 text-xs font-semibold text-slate-400 uppercase tracking-wider">Factories</div>
+              {matchedFactories.map(f => (
+                <button key={f.id} onClick={onViewFactory}
+                  className="w-full flex items-center gap-3 px-4 py-3 hover:bg-slate-50 transition-colors text-left">
+                  <div className="w-9 h-9 rounded-lg bg-amber-50 border border-amber-100 flex-shrink-0 flex items-center justify-center text-amber-500">
+                    <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2z"/></svg>
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-slate-800 truncate">{f.name}</p>
+                    <p className="text-xs text-slate-500 truncate">{f.address || f.contact_person || "—"}</p>
+                  </div>
+                </button>
+              ))}
+            </div>
+          )}
+          {totalResults > 0 && <div className="h-3" />}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // App Root
 // ─────────────────────────────────────────────────────────────────────────────
 export default function App() {
@@ -691,6 +811,8 @@ export default function App() {
   const [toast, setToast]         = useState(null);
   const [detail, setDetail]       = useState(null);
   const [confirm, setConfirm]     = useState(null);
+  const [showGlobalSearch, setShowGlobalSearch] = useState(false);
+  const [globalQuery, setGlobalQuery] = useState("");
 
   // 1. Check existing session on mount, listen for auth changes
   useEffect(() => {
@@ -953,6 +1075,17 @@ export default function App() {
           onConfirm={() => { confirm.onConfirm(); setConfirm(null); }}
           onCancel={() => setConfirm(null)} />
       )}
+      {showGlobalSearch && (
+        <GlobalSearchOverlay
+          query={globalQuery} setQuery={setGlobalQuery}
+          visits={visits} devs={devs} factories={factories}
+          onClose={() => setShowGlobalSearch(false)}
+          onViewDev={(id) => { setShowGlobalSearch(false); setDetail({ type: "dev", id }); }}
+          onViewVisit={(id) => { setShowGlobalSearch(false); setDetail({ type: "visit", id }); }}
+          onViewFactory={() => { setShowGlobalSearch(false); goPage("factories"); }}
+          currentUser={currentUser}
+        />
+      )}
       <header className="fixed top-0 left-0 right-0 z-50 bg-slate-900">
         {/* ── Row 1: Logo + Lang + Bell + User ── */}
         <div className="flex items-center h-12 px-3 sm:px-4 gap-2 max-w-6xl mx-auto">
@@ -962,7 +1095,11 @@ export default function App() {
           </button>
           <div className="flex-1" />
           <div className="flex-shrink-0 flex items-center gap-1.5">
-            {/* Language switcher */}
+            {/* Global search */}
+            <button onClick={() => { setShowGlobalSearch(true); setGlobalQuery(""); }}
+              className="w-8 h-8 flex items-center justify-center text-slate-400 hover:text-white hover:bg-white/10 rounded-lg transition-colors">
+              <svg width="15" height="15" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><circle cx="11" cy="11" r="8"/><path strokeLinecap="round" d="m21 21-4.35-4.35"/></svg>
+            </button>
             <div className="flex items-center bg-white/10 rounded-lg overflow-hidden">
               {["en","zh"].map(l => (
                 <button key={l} onClick={() => changeLang(l)}
@@ -971,7 +1108,7 @@ export default function App() {
                 </button>
               ))}
             </div>
-            {/* Notification bell */}
+            {/* Language switcher */}
             <div className="relative">
               <button onClick={() => setShowNotifs(s => !s)}
                 className="relative w-8 h-8 flex items-center justify-center text-slate-400 hover:text-white hover:bg-white/10 rounded-lg transition-colors">
@@ -1151,7 +1288,10 @@ function DashboardPage({ visits, devs, factories, setPage, needsFollowUp, dueSoo
                     <Card key={v.id} className="shadow-sm hover:shadow-md transition-all">
                       <div className="flex items-center gap-3 p-3">
                         <div className="w-12 h-12 rounded-xl bg-slate-100 flex-shrink-0 overflow-hidden flex items-center justify-center text-slate-400">
-                          {v.picture_url ? <img src={v.picture_url} alt="" className="w-full h-full object-cover" /> : Icon.box}
+                          {v.picture_url ? <img src={v.picture_url} alt="" className="w-full h-full object-cover" /> : <div className="flex flex-col items-center gap-1 text-slate-300">
+                  <svg width="24" height="24" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.2}><rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline strokeLinecap="round" strokeLinejoin="round" points="21 15 16 10 5 21"/></svg>
+                  <span className="text-xs">No photo</span>
+                </div>}
                         </div>
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2 flex-wrap">
@@ -1181,7 +1321,10 @@ function DashboardPage({ visits, devs, factories, setPage, needsFollowUp, dueSoo
                       <Card key={d.id} className={`shadow-sm hover:shadow-md transition-all ${nf ? "border-l-4 border-l-orange-400" : ""}`}>
                         <div className="flex items-center gap-3 p-3">
                           <div className="w-12 h-12 rounded-xl bg-slate-100 flex-shrink-0 overflow-hidden flex items-center justify-center text-slate-400">
-                            {d.picture_url ? <img src={d.picture_url} alt="" className="w-full h-full object-cover" /> : Icon.box}
+                            {d.picture_url ? <img src={d.picture_url} alt="" className="w-full h-full object-cover" /> : <div className="flex flex-col items-center gap-1 text-slate-300">
+                  <svg width="24" height="24" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.2}><rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline strokeLinecap="round" strokeLinejoin="round" points="21 15 16 10 5 21"/></svg>
+                  <span className="text-xs">No photo</span>
+                </div>}
                           </div>
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center gap-2 flex-wrap">
@@ -1216,7 +1359,10 @@ function DashboardPage({ visits, devs, factories, setPage, needsFollowUp, dueSoo
                     <Card key={d.id} className={`shadow-sm hover:shadow-md transition-all ${nf ? "border-l-4 border-l-orange-400" : ""}`}>
                       <div className="flex items-center gap-3 p-3">
                         <div className="w-12 h-12 rounded-xl bg-slate-100 flex-shrink-0 overflow-hidden flex items-center justify-center text-slate-400">
-                          {d.picture_url ? <img src={d.picture_url} alt="" className="w-full h-full object-cover" /> : Icon.box}
+                          {d.picture_url ? <img src={d.picture_url} alt="" className="w-full h-full object-cover" /> : <div className="flex flex-col items-center gap-1 text-slate-300">
+                  <svg width="24" height="24" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.2}><rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline strokeLinecap="round" strokeLinejoin="round" points="21 15 16 10 5 21"/></svg>
+                  <span className="text-xs">No photo</span>
+                </div>}
                         </div>
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center gap-2 flex-wrap">
@@ -1443,7 +1589,10 @@ function VisitCard({ visit, onEdit, onDelete, onView, currentUser }) {
     <Card className="shadow-sm hover:shadow-lg transition-all overflow-hidden">
       <div className="flex">
         <div className="w-28 flex-shrink-0 bg-gradient-to-br from-slate-100 to-slate-200 flex items-center justify-center text-slate-400 overflow-hidden">
-          {visit.picture_url ? <img src={visit.picture_url} alt="" className="w-full h-full object-cover" /> : Icon.box}
+          {visit.picture_url ? <img src={visit.picture_url} alt="" className="w-full h-full object-cover" /> : <div className="flex flex-col items-center gap-1 text-slate-300">
+                  <svg width="24" height="24" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.2}><rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline strokeLinecap="round" strokeLinejoin="round" points="21 15 16 10 5 21"/></svg>
+                  <span className="text-xs">No photo</span>
+                </div>}
         </div>
         <div className="flex-1 p-4">
           <div className="flex items-center gap-2 mb-1 flex-wrap">
@@ -1767,6 +1916,7 @@ function DevelopmentsPage({ devs, setDevs, factories, users, currentUser, onView
   const isAdmin = currentUser?.role === "admin";
   const isSupplier = currentUser?.role === "supplier";
   const [filterUser, setFilterUser] = useState("all");
+  const [supplierTab, setSupplierTab] = useState("active");
   const allUsers = [...new Set(devs.map(d => d.team_member_name).filter(Boolean))];
 
   // Factory-aware stats
@@ -1828,6 +1978,82 @@ function DevelopmentsPage({ devs, setDevs, factories, users, currentUser, onView
       setDevs((p) => p.filter((d) => d.id !== id));
       showToast("Deleted");
     });
+  }
+
+  // ── Supplier dedicated view ──────────────────────────────────────────────
+  if (isSupplier) {
+    const myDevs = devs.filter(d => d.factory_ids?.includes(currentUser?.factory_id));
+    const myActive = myDevs.filter(d => d.status === "open" || d.status === "in_progress");
+    const myDone   = myDevs.filter(d => d.status === "completed" || d.status === "cancelled");
+    const supplierList = supplierTab === "active" ? myActive : myDone;
+
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-slate-50 to-purple-50/20">
+        <div className="bg-slate-800 text-white">
+          <div className="max-w-3xl mx-auto px-4 sm:px-6 py-4">
+            <h1 className="text-xl font-bold">My Assigned Developments</h1>
+            <p className="text-slate-400 mt-0.5 text-xs">Developments assigned to your factory</p>
+            <div className="grid grid-cols-3 gap-3 mt-3">
+              {[["Active", myActive.length, "active"], ["Completed", myDone.length, "done"], ["Total", myDevs.length, null]].map(([label, value, tab]) => (
+                <div key={label} onClick={() => tab && setSupplierTab(tab)}
+                  className={`rounded-xl p-3 border transition-all ${tab ? "cursor-pointer hover:bg-white/20" : ""} ${supplierTab === tab ? "bg-amber-500/30 border-amber-400" : "bg-white/10 border-white/10"}`}>
+                  <p className="text-lg font-bold">{value}</p>
+                  <p className="text-slate-300 text-xs mt-0.5">{label}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+        <div className="max-w-3xl mx-auto px-4 sm:px-6 py-6">
+          {supplierList.length === 0
+            ? <EmptyState icon={Icon.flask} title="No developments yet" subtitle="Developments assigned to your factory will appear here" />
+            : <div className="space-y-4">
+                {supplierList.map(dev => {
+                  const latestUpdate = dev.updates?.slice(-1)[0];
+                  const unreadCount = (dev.messages || []).filter(m =>
+                    m.sender_name !== currentUser?.full_name && !(m.read_by || []).includes(currentUser?.full_name)
+                  ).length;
+                  return (
+                    <div key={dev.id} className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden hover:shadow-md transition-shadow">
+                      <div className="flex">
+                        <div className="w-28 flex-shrink-0 bg-gradient-to-br from-slate-100 to-slate-200 flex items-center justify-center relative">
+                          {dev.picture_url
+                            ? <img src={dev.picture_url} alt={dev.title} className="w-full h-full object-cover absolute inset-0" />
+                            : <div className="flex flex-col items-center gap-1 text-slate-400">
+                                <svg width="28" height="28" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.2}><rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline strokeLinecap="round" strokeLinejoin="round" points="21 15 16 10 5 21"/></svg>
+                                <span className="text-xs">No photo</span>
+                              </div>
+                          }
+                        </div>
+                        <div className="flex-1 p-4">
+                          <div className="flex items-center gap-2 mb-1 flex-wrap">
+                            <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${DEV_STATUS_CSS[dev.status]}`}>{DEV_STATUS_LABEL()[dev.status]}</span>
+                            {unreadCount > 0 && (
+                              <span className="text-xs px-2 py-0.5 rounded-full bg-red-100 text-red-700 font-medium">💬 {unreadCount} new</span>
+                            )}
+                          </div>
+                          <h3 className="font-semibold text-slate-800 text-base">{dev.title}</h3>
+                          {dev.material && <p className="text-xs text-slate-500 mt-0.5">Material: {dev.material}{dev.size ? ` · ${dev.size}` : ""}</p>}
+                          {dev.special_remarks && <p className="text-xs text-slate-500 mt-0.5 line-clamp-1">Remarks: {dev.special_remarks}</p>}
+                          {latestUpdate && (
+                            <div className="mt-2 p-2 bg-purple-50 rounded-lg border border-purple-100">
+                              <p className="text-xs text-purple-700 font-medium">Latest update: {latestUpdate.notes?.slice(0, 80)}{latestUpdate.notes?.length > 80 ? "…" : ""}</p>
+                            </div>
+                          )}
+                          <div className="mt-3 flex items-center justify-between">
+                            <p className="text-xs text-slate-400">{fmtDate(dev.created_date)}</p>
+                            <Btn variant="purple" size="sm" onClick={() => onView(dev.id)}>View & Update →</Btn>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+          }
+        </div>
+      </div>
+    );
   }
 
   return (
@@ -1951,7 +2177,10 @@ function DevCard({ dev, onEdit, onDelete, onView }) {
     <Card className={`shadow-sm hover:shadow-lg transition-all overflow-hidden ${needsFollowUp ? "border-l-4 border-l-orange-400" : ""}`}>
       <div className="flex">
         <div className="w-24 sm:w-32 flex-shrink-0 min-h-[110px] bg-gradient-to-br from-slate-100 to-slate-200 flex items-center justify-center text-slate-400">
-          {dev.picture_url ? <img src={dev.picture_url} alt={dev.title} className="w-full h-full object-cover" /> : Icon.box}
+          {dev.picture_url ? <img src={dev.picture_url} alt={dev.title} className="w-full h-full object-cover" /> : <div className="flex flex-col items-center gap-1 text-slate-300">
+                  <svg width="24" height="24" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.2}><rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline strokeLinecap="round" strokeLinejoin="round" points="21 15 16 10 5 21"/></svg>
+                  <span className="text-xs">No photo</span>
+                </div>}
         </div>
         <div className="flex-1 p-4">
           <div className="flex items-center gap-2 mb-1 flex-wrap">
