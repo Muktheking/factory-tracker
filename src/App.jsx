@@ -533,11 +533,11 @@ function SlideshowViewer({ visits, devs, onSignOut }) {
   const DURATION = 30000;
   const sorted = [...visits].sort((a, b) => new Date(b.visit_date) - new Date(a.visit_date));
 
-  // Build sequence: visit, dashboard, visit, dashboard...
+  // Build sequence: dashboard (preview), visit, dashboard (preview), visit...
   const sequence = [];
   sorted.forEach((v, i) => {
+    sequence.push({ type: "dashboard", upcomingIndex: i });
     sequence.push({ type: "visit", data: v, index: i });
-    sequence.push({ type: "dashboard" });
   });
 
   const [seqIdx, setSeqIdx] = useState(0);
@@ -727,7 +727,7 @@ function SlideshowViewer({ visits, devs, onSignOut }) {
             <div className="grid grid-cols-4 gap-4 h-full">
               {recentVisits.map((v, i) => {
                 const photo = v.picture_url || v.additional_pictures?.[0];
-                const isActive = i === (seqIdx - 1) / 2;
+                const isActive = i === current.upcomingIndex;
                 return (
                   <div key={v.id} className={`rounded-2xl overflow-hidden bg-slate-800 flex flex-col border transition-all duration-500 ${isActive ? "border-amber-400 ring-2 ring-amber-400 shadow-xl shadow-amber-900/40" : "border-white/5 opacity-60 scale-95"}`}>
                     <div className="h-36 bg-slate-700 flex-shrink-0 overflow-hidden relative">
@@ -738,7 +738,7 @@ function SlideshowViewer({ visits, devs, onSignOut }) {
                           </div>
                       }
                       {isActive && (
-                        <div className="absolute top-2 right-2 bg-amber-400 text-black text-xs font-bold px-2 py-0.5 rounded-full">NOW</div>
+                        <div className="absolute top-2 right-2 bg-amber-400 text-black text-xs font-bold px-2 py-0.5 rounded-full">NEXT</div>
                       )}
                     </div>
                     <div className="p-3 flex-1 flex flex-col items-center justify-center text-center gap-1">
