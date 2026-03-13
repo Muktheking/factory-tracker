@@ -167,6 +167,34 @@ const LokaLogo = ({ size = 32 }) => (
 // ─────────────────────────────────────────────────────────────────────────────
 // SUPABASE CONFIG — paste your project URL and anon key here
 // ─────────────────────────────────────────────────────────────────────────────
+// WGS-84 → GCJ-02 (Mars Coordinates) conversion — required for accurate AMap geocoding in China
+function wgs84ToGcj02(lat, lng) {
+  const a = 6378245.0, ee = 0.00669342162296594323;
+  function transformLat(x, y) {
+    let r = -100 + 2*x + 3*y + 0.2*y*y + 0.1*x*y + 0.2*Math.sqrt(Math.abs(x));
+    r += (20*Math.sin(6*x*Math.PI) + 20*Math.sin(2*x*Math.PI)) * 2/3;
+    r += (20*Math.sin(y*Math.PI) + 40*Math.sin(y/3*Math.PI)) * 2/3;
+    r += (160*Math.sin(y/12*Math.PI) + 320*Math.sin(y*Math.PI/30)) * 2/3;
+    return r;
+  }
+  function transformLng(x, y) {
+    let r = 300 + x + 2*y + 0.1*x*x + 0.1*x*y + 0.1*Math.sqrt(Math.abs(x));
+    r += (20*Math.sin(6*x*Math.PI) + 20*Math.sin(2*x*Math.PI)) * 2/3;
+    r += (20*Math.sin(x*Math.PI) + 40*Math.sin(x/3*Math.PI)) * 2/3;
+    r += (150*Math.sin(x/12*Math.PI) + 300*Math.sin(x/30*Math.PI)) * 2/3;
+    return r;
+  }
+  const dLat = transformLat(lng - 105, lat - 35);
+  const dLng = transformLng(lng - 105, lat - 35);
+  const radLat = lat / 180 * Math.PI;
+  const magic = 1 - ee * Math.sin(radLat) ** 2;
+  const sqrtMagic = Math.sqrt(magic);
+  return {
+    lat: lat + (dLat * 180) / (a * (1 - ee) / (magic * sqrtMagic) * Math.PI),
+    lng: lng + (dLng * 180) / (a / sqrtMagic * Math.cos(radLat) * Math.PI),
+  };
+}
+
 const SUPABASE_URL  = "https://gtgwnvtckrnhzbjodgvd.supabase.co";
 const SUPABASE_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imd0Z3dudnRja3JuaHpiam9kZ3ZkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMyMTAzNDAsImV4cCI6MjA4ODc4NjM0MH0.4-7mYTWKjabHOlvNMuNJ3o_pzhDDoGd_2XFDwIbGvNc";
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON);
@@ -1718,8 +1746,10 @@ function VisitForm({ visit, factories, currentUser, onSave, onCancel }) {
 
     async function applyPosition(pos) {
       const { latitude, longitude } = pos.coords;
+      // Convert WGS-84 (browser GPS) → GCJ-02 (AMap/China system) — fixes ~500m offset
+      const gcj = wgs84ToGcj02(latitude, longitude);
       try {
-        const res = await fetch(`https://restapi.amap.com/v3/geocode/regeo?key=a3fa54b4926b09660455bbb6c286c12a&location=${longitude},${latitude}&radius=50&extensions=base&batch=false`);
+        const res = await fetch(`https://restapi.amap.com/v3/geocode/regeo?key=a3fa54b4926b09660455bbb6c286c12a&location=${gcj.lng},${gcj.lat}&radius=50&extensions=base&batch=false`);
         const data = await res.json();
         const address = data.regeocode?.formatted_address || `${latitude.toFixed(6)}, ${longitude.toFixed(6)}`;
         setForm((p) => ({ ...p, latitude, longitude, location_address: address }));
@@ -1847,7 +1877,8 @@ function useReverseGeocode(lat, lon, existingAddress) {
     if (!lat || !lon) return;
     const looksLikeCoords = !existingAddress || /^-?\d+\.\d+,\s*-?\d+\.\d+$/.test(existingAddress.trim());
     if (!looksLikeCoords) { setAddress(existingAddress); return; }
-    fetch(`https://restapi.amap.com/v3/geocode/regeo?key=a3fa54b4926b09660455bbb6c286c12a&location=${lon},${lat}&radius=100&extensions=base&batch=false`)
+    const gcj = wgs84ToGcj02(lat, lon);
+    fetch(`https://restapi.amap.com/v3/geocode/regeo?key=a3fa54b4926b09660455bbb6c286c12a&location=${gcj.lng},${gcj.lat}&radius=50&extensions=base&batch=false`)
       .then(r => r.json())
       .then(data => {
         const address = data.regeocode?.formatted_address || existingAddress;
