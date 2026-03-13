@@ -339,6 +339,12 @@ const db = {
   async getVisits()             { const { data } = await supabase.from("visits").select("*").order("visit_date", { ascending: false }); return data || []; },
   async upsertVisit(v)          { const { data, error } = await supabase.from("visits").upsert(v).select().single(); if (error) { alert("Save failed: " + error.message); } return data; },
   async deleteVisit(id)         { await supabase.from("visits").delete().eq("id", id); },
+
+  // Notifications
+  async getNotifs(userId)       { const { data } = await supabase.from("notifications").select("*").eq("recipient_id", userId).eq("read", false).order("created_at", { ascending: false }).limit(50); return data || []; },
+  async insertNotif(n)          { const { data } = await supabase.from("notifications").insert(n).select().single(); return data; },
+  async markNotifRead(id)       { await supabase.from("notifications").update({ read: true }).eq("id", id); },
+  async markAllNotifsRead(userId) { await supabase.from("notifications").update({ read: true }).eq("recipient_id", userId).eq("read", false); },
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1075,40 +1081,58 @@ export default function App() {
 
   function changeLang(l) { globalLang = l; setLang(l); }
 
-  function addNotification(msgKey, msgData = {}, devId = null, type = "info") {
-    const n = { id: Date.now(), msgKey, msgData, devId, type, time: new Date() };
-    setNotifications(prev => [n, ...prev].slice(0, 50));
+  // Push a notification to the DB for a specific user (by their users-table id)
+  async function pushNotif(recipientId, msgKey, msgData = {}, devId = null, type = "info") {
+    if (!recipientId) return;
+    const n = {
+      id: genId("N"),
+      recipient_id: recipientId,
+      msg_key: msgKey,
+      msg_data: msgData,
+      dev_id: devId,
+      type,
+      read: false,
+      created_at: new Date().toISOString(),
+    };
+    await db.insertNotif(n);
+  }
+
+  // Push to multiple recipients at once
+  async function pushNotifToMany(recipientIds, msgKey, msgData = {}, devId = null, type = "info") {
+    const ids = [...new Set(recipientIds.filter(Boolean))];
+    await Promise.all(ids.map(id => pushNotif(id, msgKey, msgData, devId, type)));
   }
   function renderNotifMsg(n) {
-    const k = n.msgKey;
-    if (!k) return n.msg || ""; // fallback for old format
-    if (k === "factoryAdded") return `${t("factoryAdded")}: ${n.msgData.name || ""}`;
-    if (k === "infoEdited") return `${t("infoEdited")}: ${n.msgData.name || ""}`;
+    const k = n.msg_key || n.msgKey;
+    const d = n.msg_data || n.msgData || {};
+    if (!k) return n.msg || "";
+    if (k === "factoryAdded") return `${t("factoryAdded")}: ${d.name || ""}`;
+    if (k === "infoEdited") return `${t("infoEdited")}: ${d.name || ""}`;
     if (k === "newDev") return globalLang === "zh"
-      ? `${n.msgData.team || "有人"}新建了开发: ${n.msgData.title || ""}`
-      : `${n.msgData.team || "New development"}: ${n.msgData.title || ""}`;
+      ? `${d.team || "有人"}新建了开发: ${d.title || ""}`
+      : `${d.team || "New development"}: ${d.title || ""}`;
     if (k === "newMsg") return globalLang === "zh"
-      ? `${n.msgData.sender || "有人"} 在 "${n.msgData.devTitle || "开发"}" 中发来消息: ${n.msgData.preview || ""}`
-      : `${n.msgData.sender || "Someone"} in "${n.msgData.devTitle || "a development"}": ${n.msgData.preview || ""}`;
+      ? `${d.sender || "有人"} 在 "${d.devTitle || "开发"}" 中发来消息: ${d.preview || ""}`
+      : `${d.sender || "Someone"} in "${d.devTitle || "a development"}": ${d.preview || ""}`;
     if (k === "newVisit") return globalLang === "zh"
-      ? `${n.msgData.visitor || "有人"} 拜访了 ${n.msgData.factory || ""}`
-      : `${n.msgData.visitor || "Someone"} visited ${n.msgData.factory || ""}`;
-    if (k === "pending") return `${globalLang === "zh" ? "新账户申请" : "New signup request"}: ${n.msgData.name || ""} (${n.msgData.email || ""})`;
+      ? `${d.visitor || "有人"} 拜访了 ${d.factory || ""}`
+      : `${d.visitor || "Someone"} visited ${d.factory || ""}`;
+    if (k === "pending") return `${globalLang === "zh" ? "新账户申请" : "New signup request"}: ${d.name || ""} (${d.email || ""})`;
     if (k === "devUpdate") return globalLang === "zh"
-      ? `${n.msgData.factory || "工厂"} 更新了 "${n.msgData.title || "开发"}"${n.msgData.notes ? `: ${n.msgData.notes}` : ""}`
-      : `${n.msgData.factory || "Factory"} posted update on "${n.msgData.title || "a development"}"${n.msgData.notes ? `: ${n.msgData.notes}` : ""}`;
+      ? `${d.factory || "工厂"} 更新了 "${d.title || "开发"}"${d.notes ? `: ${d.notes}` : ""}`
+      : `${d.factory || "Factory"} posted update on "${d.title || "a development"}"${d.notes ? `: ${d.notes}` : ""}`;
     if (k === "newDevSupplier") return globalLang === "zh"
-      ? `新开发任务: "${n.msgData.title || ""}"`
-      : `New development assigned to you: "${n.msgData.title || ""}"`;
+      ? `新开发任务: "${d.title || ""}"`
+      : `New development assigned to you: "${d.title || ""}"`;
     if (k === "supplierConfirmed") return globalLang === "zh"
-      ? `供应商已确认接收 "${n.msgData.title || ""}"`
-      : `${n.msgData.factory || "Supplier"} confirmed receipt of "${n.msgData.title || ""}"`;
+      ? `供应商已确认接收 "${d.title || ""}"`
+      : `${d.factory || "Supplier"} confirmed receipt of "${d.title || ""}"`;
     if (k === "devViewed") return globalLang === "zh"
-      ? `${n.msgData.viewer || "团队成员"}查看了您的开发: "${n.msgData.title || ""}"`
-      : `${n.msgData.viewer || "Team"} viewed your development: "${n.msgData.title || ""}"`;
+      ? `${d.viewer || "团队成员"}查看了您的开发: "${d.title || ""}"`
+      : `${d.viewer || "Team"} viewed your development: "${d.title || ""}"`;
     if (k === "newMsgCount") return globalLang === "zh"
-      ? `${n.msgData.count} 条新消息`
-      : `${n.msgData.count} new message${n.msgData.count > 1 ? "s" : ""}`;
+      ? `${d.count} 条新消息`
+      : `${d.count} new message${d.count > 1 ? "s" : ""}`;
     return n.msg || "";
   }
   const [dbError, setDbError]     = useState(null);
@@ -1166,249 +1190,64 @@ export default function App() {
   const authEmail   = session?.user?.email;
   const currentUser = users.find((u) => u.email?.toLowerCase() === authEmail?.toLowerCase()) || null;
 
-  // On first load: notify supplier of new devs assigned since last seen
-  const startupNotifyDone = useRef(false);
+  // Load notifications from DB when user is identified
+  const notifsLoadedRef = useRef(false);
   useEffect(() => {
-    if (!currentUser || !devs.length || startupNotifyDone.current) return;
-    startupNotifyDone.current = true;
-    if (currentUser.role === "supplier" && currentUser.factory_id) {
-      let seenIds = [];
-      try { seenIds = JSON.parse(localStorage.getItem(`seenDevs_${currentUser.id}`) || "[]"); } catch {}
-      const myNewDevs = devs.filter(d => {
-        const fids = Array.isArray(d.factory_ids) ? d.factory_ids : [];
-        return fids.includes(currentUser.factory_id) && !seenIds.includes(d.id);
-      });
-      if (myNewDevs.length > 0) {
-        setTimeout(() => {
-          myNewDevs.forEach(d => addNotification("newDevSupplier", { title: d.title || "" }, d.id, "dev"));
-        }, 1500); // slight delay so UI is ready
-      }
-    }
-  }, [currentUser?.id, devs.length]);
+    if (!currentUser?.id || notifsLoadedRef.current) return;
+    notifsLoadedRef.current = true;
+    db.getNotifs(currentUser.id).then(rows => setNotifications(rows));
+  }, [currentUser?.id]);
 
   // Use a ref so realtime handlers always have latest currentUser
   const currentUserRef = useRef(currentUser);
   useEffect(() => { currentUserRef.current = currentUser; }, [currentUser]);
 
-  // 3. Realtime subscriptions (only when logged in)
+  // 3. Realtime subscriptions — data sync + instant notification delivery
   useEffect(() => {
     if (!session || loading || dbError) return;
     const ch = supabase.channel("realtime-all")
-      .on("postgres_changes", { event: "*", schema: "public", table: "factories" }, (payload) => {
+      .on("postgres_changes", { event: "*", schema: "public", table: "factories" }, () => {
         db.getFactories().then(setFactories);
-        const cu = currentUserRef.current;
-        if (!cu || cu.role === "supplier") return; // suppliers don't get factory notifications
-        if (payload.eventType === "INSERT") addNotification("factoryAdded", {name: payload.new?.name || ""}, null, "factory");
-        if (payload.eventType === "UPDATE") addNotification("infoEdited", {name: payload.new?.name || ""}, null, "edit");
       })
-      .on("postgres_changes", { event: "*", schema: "public", table: "users" }, () => { db.getUsers().then(setUsers); })
-      .on("postgres_changes", { event: "*", schema: "public", table: "developments" }, (payload) => {
+      .on("postgres_changes", { event: "*", schema: "public", table: "users" }, () => {
+        db.getUsers().then(setUsers);
+      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "developments" }, () => {
         db.getDevs().then(setDevs);
+      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "development_updates" }, () => {
+        db.getDevs().then(setDevs);
+      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "development_messages" }, () => {
+        db.getDevs().then(setDevs);
+      })
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "visits" }, () => {
+        db.getVisits().then(setVisits);
+      })
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "visits" }, () => {
+        db.getVisits().then(setVisits);
+      })
+      // *** KEY: Listen for new notifications addressed to THIS user ***
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "notifications" }, (payload) => {
         const cu = currentUserRef.current;
         if (!cu) return;
-        if (payload.eventType === "INSERT") {
-          const newDev = payload.new;
-          // Notify admin of all new devs
-          if (cu.role === "admin") {
-            addNotification("newDev", {title: newDev?.title || "", team: newDev?.team_member_name || ""}, newDev?.id, "dev");
-          }
-          // Notify supplier if this dev is assigned to their factory
-          if (cu.role === "supplier") {
-            const factoryIds = Array.isArray(newDev?.factory_ids) ? newDev.factory_ids : JSON.parse(newDev?.factory_ids || "[]");
-            if (factoryIds.includes(cu.factory_id)) {
-              addNotification("newDevSupplier", {title: newDev?.title || ""}, newDev?.id, "dev");
-            }
-          }
-        }
-        // Notify admin/team member when supplier confirms (status_history updated)
-        if (payload.eventType === "UPDATE" && cu.role !== "supplier") {
-          const newHistory = payload.new?.status_history || [];
-          const oldHistory = payload.old?.status_history || [];
-          const newConfirm = Array.isArray(newHistory) ? newHistory : [];
-          const oldConfirm = Array.isArray(oldHistory) ? oldHistory : [];
-          const justConfirmed = newConfirm.some(h => h.status === "supplier_confirmed") &&
-            !oldConfirm.some(h => h.status === "supplier_confirmed");
-          if (justConfirmed) {
-            const isInvolved = cu.role === "admin" || payload.new?.team_member_id === cu.id || payload.new?.assigned_user_id === cu.id;
-            if (isInvolved) {
-              addNotification("supplierConfirmed", {
-                title: payload.new?.title || "",
-                factory: payload.new?.factory_names?.[0] || "Supplier",
-              }, payload.new?.id, "dev");
-            }
-          }
+        if (payload.new?.recipient_id === cu.id) {
+          setNotifications(prev => [payload.new, ...prev].slice(0, 50));
         }
       })
-      .on("postgres_changes", { event: "*", schema: "public", table: "development_updates" }, (payload) => {
-        db.getDevs().then((newDevs) => {
-          setDevs(newDevs);
-          const cu = currentUserRef.current;
-          if (!cu || payload.eventType !== "INSERT") return;
-          const upd = payload.new;
-          const relatedDev = newDevs.find(d => d.id === upd?.development_id);
-          if (!relatedDev) return;
-          const submitterName = upd.factory_name || "Supplier";
-          // Notify admin and the dev's team member + assigned user (but not the submitter)
-          const isInvolved = cu.role === "admin"
-            || relatedDev.team_member_id === cu.id
-            || relatedDev.assigned_user_id === cu.id;
-          if (isInvolved && cu.full_name !== upd.submitted_by) {
-            addNotification("devUpdate", {
-              factory: submitterName,
-              title: relatedDev.title || "",
-              notes: upd.notes?.slice(0, 40) || upd.production_status?.slice(0, 40) || "",
-            }, relatedDev.id, "dev");
-          }
-        });
-      })
-      .on("postgres_changes", { event: "*", schema: "public", table: "development_messages" }, (payload) => {
-        db.getDevs().then((newDevs) => {
-          setDevs(newDevs);
-          const cu = currentUserRef.current;
-          const msg = payload.new;
-          if (!cu || !msg || msg.sender_name === cu?.full_name) return;
-          // Only notify if user is involved in this development
-          const relatedDev = newDevs.find(d => d.id === msg.development_id);
-          if (!relatedDev) return;
-          const isInvolved = cu.role === "admin"
-            || relatedDev.team_member_id === cu.id
-            || (cu.role === "supplier" && relatedDev.factory_ids?.includes(cu.factory_id));
-          if (isInvolved) {
-            addNotification("newMsg", {sender: msg.sender_name, preview: msg.message?.slice(0, 40)}, msg.development_id, "chat");
-          }
-        });
-      })
-      .on("postgres_changes", { event: "INSERT", schema: "public", table: "visits" }, (payload) => {
-        db.getVisits().then(setVisits);
-        const cu = currentUserRef.current;
-        if (!cu || cu.role === "supplier") return; // suppliers don't get visit notifications
-        if (payload.new?.visitor_name !== cu?.full_name) {
-          addNotification("newVisit", {visitor: payload.new?.visitor_name, factory: payload.new?.factory_name}, null, "visit");
-        }
-      })
-      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "visits" }, () => { db.getVisits().then(setVisits); })
       .subscribe();
     return () => supabase.removeChannel(ch);
   }, [session, loading, dbError]);
 
-  // 4. Unified polling fallback — covers all notification types when Realtime is unreliable
-  const lastSeenDevUpdateRef = useRef({}); // { devId: latest update created_date, "sc_"+devId, "av_"+devId+"_"+name }
-  const knownDevIdsRef = useRef(null); // null = first load, Set after first load
-  const lastPendingRef  = useRef(null);
+  // 4. Simple data refresh every 20s — notifications handled by DB + Realtime
   useEffect(() => {
     if (!session || !currentUser) return;
-    const interval = setInterval(async () => {
-      const cu = currentUserRef.current;
-      if (!cu) return;
-
-      // === Admin: notify when new signup requests arrive ===
-      if (cu.role === "admin") {
-        try {
-          const allUsers = await db.getUsers();
-          const pending = allUsers.filter(u => u.status === "pending");
-          const prevPending = lastPendingRef.current;
-          if (prevPending !== null && pending.length > prevPending) {
-            const newPending = pending.slice(-(pending.length - prevPending));
-            newPending.forEach(u => addNotification("pending", {name: u.full_name, email: u.email}, null, "pending"));
-            setUsers(allUsers);
-          } else if (prevPending === null) { setUsers(allUsers); }
-          lastPendingRef.current = pending.length;
-        } catch(e) {}
-      }
-
-      const [newDevs] = await Promise.all([db.getDevs(), db.getVisits().then(setVisits)]);
-      setDevs(newDevs);
-
-      // === Supplier: notify when new dev is assigned to their factory ===
-      if (cu.role === "supplier" && cu.factory_id) {
-        const myDevs = newDevs.filter(d => {
-          const fids = Array.isArray(d.factory_ids) ? d.factory_ids : JSON.parse(d.factory_ids || "[]");
-          return fids.includes(cu.factory_id);
-        });
-        if (knownDevIdsRef.current === null) {
-          // First poll — just record existing devs, don't notify
-          knownDevIdsRef.current = new Set(myDevs.map(d => d.id));
-        } else {
-          myDevs.forEach(d => {
-            if (!knownDevIdsRef.current.has(d.id)) {
-              knownDevIdsRef.current.add(d.id);
-              addNotification("newDevSupplier", { title: d.title || "" }, d.id, "dev");
-            }
-          });
-        }
-      }
-
-      // === Admin/User: notify when a supplier submits an update ===
-      if (cu.role !== "supplier") {
-        newDevs.forEach(dev => {
-          if (!dev.updates?.length) return;
-          const latestUpd = dev.updates[dev.updates.length - 1];
-          if (!latestUpd) return;
-          const prevSeen = lastSeenDevUpdateRef.current[dev.id];
-          if (prevSeen === undefined) {
-            // First poll — just record, don't notify
-            lastSeenDevUpdateRef.current[dev.id] = latestUpd.created_date;
-          } else if (latestUpd.created_date !== prevSeen) {
-            lastSeenDevUpdateRef.current[dev.id] = latestUpd.created_date;
-            const isInvolved = cu.role === "admin" || dev.team_member_id === cu.id || dev.assigned_user_id === cu.id;
-            if (isInvolved && cu.full_name !== latestUpd.submitted_by) {
-              addNotification("devUpdate", {
-                factory: latestUpd.factory_name || "Supplier",
-                title: dev.title || "",
-                notes: latestUpd.production_status?.slice(0, 40) || latestUpd.notes?.slice(0, 40) || "",
-              }, dev.id, "dev");
-            }
-          }
-        });
-      }
-
-      // === Admin/User: notify when supplier confirms receipt ===
-      if (cu.role !== "supplier") {
-        newDevs.forEach(dev => {
-          const hist = dev.status_history || [];
-          const confirmedEntry = hist.find(h => h.status === "supplier_confirmed");
-          if (!confirmedEntry) return;
-          const key = "sc_" + dev.id;
-          if (lastSeenDevUpdateRef.current[key]) return; // already notified
-          // Check if this entry is recent (within last 2 minutes — meaning we just missed the realtime)
-          const entryAge = Date.now() - new Date(confirmedEntry.changed_at).getTime();
-          if (entryAge < 120000) {
-            const isInvolved = cu.role === "admin" || dev.team_member_id === cu.id || dev.assigned_user_id === cu.id;
-            if (isInvolved) {
-              addNotification("supplierConfirmed", {
-                title: dev.title || "",
-                factory: dev.factory_names?.[0] || "Supplier",
-              }, dev.id, "dev");
-            }
-          }
-          lastSeenDevUpdateRef.current[key] = true;
-        });
-      }
-
-      // === Supplier: notify when admin/user views their dev (admin_viewed in history) ===
-      if (cu.role === "supplier" && cu.factory_id) {
-        newDevs.forEach(dev => {
-          const fids = Array.isArray(dev.factory_ids) ? dev.factory_ids : JSON.parse(dev.factory_ids || "[]");
-          if (!fids.includes(cu.factory_id)) return;
-          const hist = dev.status_history || [];
-          const viewedEntries = hist.filter(h => h.status === "admin_viewed");
-          viewedEntries.forEach(entry => {
-            const key = "av_" + dev.id + "_" + entry.changed_by;
-            if (lastSeenDevUpdateRef.current[key]) return;
-            const entryAge = Date.now() - new Date(entry.changed_at).getTime();
-            if (entryAge < 120000) {
-              addNotification("devViewed", {
-                viewer: entry.changed_by || "Team",
-                title: dev.title || "",
-              }, dev.id, "dev");
-            }
-            lastSeenDevUpdateRef.current[key] = true;
-          });
-        });
-      }
-    }, 15000);
+    const interval = setInterval(() => {
+      db.getDevs().then(setDevs);
+      db.getVisits().then(setVisits);
+    }, 20000);
     return () => clearInterval(interval);
-  }, [session, currentUser]);
+  }, [session, currentUser?.id]);
 
   // Re-validate every 20s — force reload if blocked/deleted so there's no stale state
   useEffect(() => {
@@ -1458,12 +1297,22 @@ export default function App() {
   }).sort((a, b) => new Date(a.internal_estimated_date) - new Date(b.internal_estimated_date));
 
   async function notifyFactory(dev, factoryId) {
-    if (!BACKEND_URL) return;
-    const factory = getFactory(factoryId);
-    const teamMember = getUser(dev.team_member_id);
-    showToast("Sending WeChat notification…", "sending");
-    const res = await sendNotification("/notify/new-development", { dev, factory, teamMember });
-    showToast(res.ok ? `✅ WeChat sent to ${factory?.wechat_id || factory?.name}` : `⚠ ${res.error}`, res.ok ? "ok" : "error");
+    // Push in-app notifications to supplier + all admins
+    const supplierUser = users.find(u => u.role === "supplier" && u.factory_id === factoryId);
+    const adminIds = users.filter(u => u.role === "admin").map(u => u.id);
+    if (supplierUser) {
+      await pushNotif(supplierUser.id, "newDevSupplier", { title: dev.title || "" }, dev.id, "dev");
+    }
+    // Notify admins (if the creator isn't already admin — avoid self-notifying)
+    const nonCreatorAdmins = adminIds.filter(id => id !== currentUser?.id);
+    await pushNotifToMany(nonCreatorAdmins, "newDev", { title: dev.title || "", team: dev.team_member_name || "" }, dev.id, "dev");
+    // Also send WeChat if backend configured
+    if (BACKEND_URL) {
+      const factory = getFactory(factoryId);
+      const teamMember = getUser(dev.team_member_id);
+      const res = await sendNotification("/notify/new-development", { dev, factory, teamMember });
+      if (!res.ok) showToast(`⚠ WeChat: ${res.error}`, "error");
+    }
   }
 
   async function sendReminder(dev) {
@@ -1507,7 +1356,7 @@ export default function App() {
     if (dev) content = (
       <DevDetailPage devId={detail.id} devs={devs} setDevs={setDevs} factories={factories}
         getFactory={getFactory} getUser={getUser} onBack={() => setDetail(null)}
-        currentUser={currentUser} onReminder={() => sendReminder(dev)} showToast={showToast} askConfirm={askConfirm} users={users} />
+        currentUser={currentUser} onReminder={() => sendReminder(dev)} showToast={showToast} askConfirm={askConfirm} users={users} pushNotif={pushNotif} pushNotifToMany={pushNotifToMany} />
     );
   } else if (detail?.type === "visit") {
     const visit = visits.find((v) => v.id === detail.id);
@@ -1531,7 +1380,7 @@ export default function App() {
     const filteredVisits = isAdmin ? visits : visits.filter(v => v.visitor_name === currentUser?.full_name);
     content = (
       <VisitsPage visits={filteredVisits} setVisits={setVisits} factories={factories} currentUser={currentUser}
-        onView={(id) => setDetail({ type: "visit", id })} showToast={showToast} askConfirm={askConfirm} />
+        onView={(id) => setDetail({ type: "visit", id })} showToast={showToast} askConfirm={askConfirm} users={users} pushNotifToMany={pushNotifToMany} />
     );
   } else if (page === "developments") {
     const filteredDevs = isAdmin ? devs : isSupplier
@@ -1550,7 +1399,7 @@ export default function App() {
   } else if (page === "users") {
     content = (
       <UsersPage users={users} setUsers={setUsers} factories={factories} currentUser={currentUser}
-        showToast={showToast} askConfirm={askConfirm} />
+        showToast={showToast} askConfirm={askConfirm} pushNotif={pushNotif} />
     );
   }
 
@@ -1611,7 +1460,10 @@ export default function App() {
                   <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100">
                     <span className="font-semibold text-slate-800 text-sm">{t("notifications")}</span>
                     {notifications.length > 0 && (
-                      <button onClick={() => setNotifications([])} className="text-xs text-slate-400 hover:text-red-500">{t("clearAll")}</button>
+                      <button onClick={() => {
+                        db.markAllNotifsRead(currentUser?.id);
+                        setNotifications([]);
+                      }} className="text-xs text-slate-400 hover:text-red-500">{t("clearAll")}</button>
                     )}
                   </div>
                   <div className="max-h-80 overflow-y-auto">
@@ -1619,23 +1471,24 @@ export default function App() {
                       ? <p className="text-center text-slate-400 text-sm py-6">{t("noNotifications")}</p>
                       : notifications.map(n => (
                           <button key={n.id} onClick={() => {
+                            db.markNotifRead(n.id);
                             setNotifications(prev => prev.filter(x => x.id !== n.id));
                             setShowNotifs(false);
-                            if (n.type === "chat" && n.devId) { setDetail({ type: "dev", id: n.devId }); }
-                            else if (n.type === "dev" && n.devId) { setDetail({ type: "dev", id: n.devId }); }
-                            else if (n.type === "visit") goPage("visits");
-                            else if (n.type === "factory") goPage("factories");
-                            else if (n.type === "pending") goPage("users");
-                            setNotifications(prev => prev.filter(x => x.id !== n.id));
+                            const devId = n.dev_id || n.devId;
+                            const type = n.type;
+                            if ((type === "chat" || type === "dev") && devId) { setDetail({ type: "dev", id: devId }); }
+                            else if (type === "visit") goPage("visits");
+                            else if (type === "factory") goPage("factories");
+                            else if (type === "pending") goPage("users");
                           }}
                             className="w-full text-left px-4 py-3 hover:bg-slate-50 border-b border-slate-50 transition-colors">
                             <div className="flex items-start gap-2">
                               <span className="text-lg flex-shrink-0">
-                                {n.type === "chat" ? "💬" : n.type === "visit" ? "🏭" : n.type === "factory" ? "🏢" : "✏️"}
+                                {n.type === "chat" ? "💬" : n.type === "visit" ? "🏭" : n.type === "factory" ? "🏢" : n.type === "pending" ? "👤" : "🔔"}
                               </span>
                               <div>
                                 <p className="text-sm text-slate-700 leading-snug">{renderNotifMsg(n)}</p>
-                                <p className="text-xs text-slate-400 mt-0.5">{n.time.toLocaleTimeString()}</p>
+                                <p className="text-xs text-slate-400 mt-0.5">{new Date(n.created_at || n.time).toLocaleTimeString()}</p>
                               </div>
                             </div>
                           </button>
@@ -1879,7 +1732,7 @@ function DashboardPage({ visits, devs, factories, setPage, needsFollowUp, dueSoo
 // ─────────────────────────────────────────────────────────────────────────────
 // Visits
 // ─────────────────────────────────────────────────────────────────────────────
-function VisitsPage({ visits, setVisits, factories, currentUser, onView, showToast, askConfirm }) {
+function VisitsPage({ visits, setVisits, factories, currentUser, onView, showToast, askConfirm, users = [], pushNotifToMany }) {
   const [showForm, setShowForm]       = useState(false);
   const [editingVisit, setEditingVisit] = useState(null);
   const [search, setSearch]           = useState("");
@@ -1937,6 +1790,15 @@ function VisitsPage({ visits, setVisits, factories, currentUser, onView, showToa
     if (saved) {
       setVisits((p) => isNew ? [saved, ...p] : p.map((v) => v.id === saved.id ? saved : v));
       showToast(isNew ? "Visit logged" : "Visit updated");
+      if (isNew && pushNotifToMany) {
+        const recipientIds = users
+          .filter(u => u.role === "admin" && u.id !== currentUser?.id)
+          .map(u => u.id);
+        await pushNotifToMany(recipientIds, "newVisit", {
+          visitor: currentUser?.full_name || saved.visitor_name || "Someone",
+          factory: saved.factory_name || "",
+        }, null, "visit");
+      }
     }
     setShowForm(false); setEditingVisit(null);
   }
@@ -2998,7 +2860,7 @@ function DevForm({ dev, factories, users, currentUser, onSave, onCancel }) {
   );
 }
 
-function DevDetailPage({ devId, devs, setDevs, factories, getFactory, getUser, onBack, currentUser, onReminder, showToast, askConfirm, users = [] }) {
+function DevDetailPage({ devId, devs, setDevs, factories, getFactory, getUser, onBack, currentUser, onReminder, showToast, askConfirm, users = [], pushNotif, pushNotifToMany }) {
   const [showEdit, setShowEdit]           = useState(false);
   const [showUpdateForm, setShowUpdateForm] = useState(false);
   const [activeTab, setActiveTab]         = useState("updates");
@@ -3008,7 +2870,7 @@ function DevDetailPage({ devId, devs, setDevs, factories, getFactory, getUser, o
   const isAdmin    = currentUser?.role === "admin";
   const isSupplier = currentUser?.role === "supplier";
 
-  // Record when admin/user opens this dev for the first time (so supplier gets notified via status history)
+  // Notify supplier when admin/user opens this dev for the first time
   useEffect(() => {
     if (!dev || !currentUser || currentUser.role === "supplier" || currentUser.role === "viewer") return;
     const viewerName = currentUser.full_name || "";
@@ -3025,6 +2887,16 @@ function DevDetailPage({ devId, devs, setDevs, factories, getFactory, getUser, o
       const newHistory = [...(dev.status_history || []), entry];
       db.upsertDev({ ...dev, status_history: newHistory, updates: undefined, messages: undefined });
       setDevs(p => p.map(d => d.id === devId ? { ...d, status_history: newHistory } : d));
+      // Notify the supplier
+      if (pushNotif) {
+        const supplierUser = users.find(u => u.role === "supplier" && dev.factory_ids?.includes(u.factory_id));
+        if (supplierUser) {
+          pushNotif(supplierUser.id, "devViewed", {
+            viewer: viewerName,
+            title: dev.title || "",
+          }, devId, "dev");
+        }
+      }
     }
   }, [devId]);
 
@@ -3065,6 +2937,19 @@ function DevDetailPage({ devId, devs, setDevs, factories, getFactory, getUser, o
         await db.upsertDev({ ...dev, status_history: newHistory, updates: undefined, messages: undefined });
         setDevs((p) => p.map((d) => d.id === devId ? { ...d, status_history: newHistory, updates: [saved, ...(d.updates || [])] } : d));
         showToast("Update submitted");
+      }
+      // Notify admin + team member + assigned user
+      if (pushNotifToMany) {
+        const recipientIds = [
+          ...users.filter(u => u.role === "admin").map(u => u.id),
+          dev.team_member_id,
+          dev.assigned_user_id,
+        ].filter(id => id && id !== currentUser?.id);
+        await pushNotifToMany(recipientIds, "devUpdate", {
+          factory: dev.factory_names?.[0] || currentUser?.factory_name || "Supplier",
+          title: dev.title || "",
+          notes: (data.production_status || data.notes || "").slice(0, 40),
+        }, devId, "dev");
       }
     }
     setShowUpdateForm(false);
@@ -3221,6 +3106,18 @@ function DevDetailPage({ devId, devs, setDevs, factories, getFactory, getUser, o
                           await db.upsertDev({ ...dev, status: "open", status_history: newHistory, updates: undefined, messages: undefined });
                           setDevs(p => p.map(d => d.id === devId ? { ...d, status: "open", status_history: newHistory } : d));
                           showToast("✅ Confirmed! You can now submit updates.");
+                          // Notify admin + team member + assigned user
+                          if (pushNotifToMany) {
+                            const recipientIds = [
+                              ...users.filter(u => u.role === "admin").map(u => u.id),
+                              dev.team_member_id,
+                              dev.assigned_user_id,
+                            ].filter(id => id && id !== currentUser?.id);
+                            await pushNotifToMany(recipientIds, "supplierConfirmed", {
+                              title: dev.title || "",
+                              factory: dev.factory_names?.[0] || currentUser?.factory_name || "Supplier",
+                            }, devId, "dev");
+                          }
                         }} className="mx-auto">
                           ✅ Confirm Receipt & Start Process
                         </Btn>
@@ -3235,7 +3132,7 @@ function DevDetailPage({ devId, devs, setDevs, factories, getFactory, getUser, o
                     {dev.updates?.map((u) => <UpdateCard key={u.id} update={u} />)}
                   </div>
                 )}
-                {activeTab === "chat" && <DevChat devId={devId} dev={dev} setDevs={setDevs} currentUser={currentUser} />}
+                {activeTab === "chat" && <DevChat devId={devId} dev={dev} setDevs={setDevs} currentUser={currentUser} users={users} pushNotifToMany={pushNotifToMany} />}
                 {activeTab === "history" && (
                   <div className="p-5 space-y-3">
                     <h4 className="text-sm font-semibold text-slate-700">Status History</h4>
@@ -3489,7 +3386,7 @@ function UpdateCard({ update }) {
   );
 }
 
-function DevChat({ devId, dev, setDevs, currentUser }) {
+function DevChat({ devId, dev, setDevs, currentUser, users = [], pushNotifToMany }) {
   const messages = dev.messages || [];
   const [text, setText] = useState("");
   const bottomRef = useRef(null);
@@ -3516,7 +3413,24 @@ function DevChat({ devId, dev, setDevs, currentUser }) {
       read_by: [currentUser?.full_name],
     };
     const saved = await db.insertMessage(record);
-    if (saved) setDevs((p) => p.map((d) => d.id === devId ? { ...d, messages: [...(d.messages || []), saved] } : d));
+    if (saved) {
+      setDevs((p) => p.map((d) => d.id === devId ? { ...d, messages: [...(d.messages || []), saved] } : d));
+      // Notify everyone involved except the sender
+      if (pushNotifToMany) {
+        const recipientIds = [
+          ...users.filter(u => u.role === "admin").map(u => u.id),
+          dev.team_member_id,
+          dev.assigned_user_id,
+          // supplier user for this dev's factory
+          ...users.filter(u => u.role === "supplier" && dev.factory_ids?.includes(u.factory_id)).map(u => u.id),
+        ].filter(id => id && id !== currentUser?.id);
+        await pushNotifToMany(recipientIds, "newMsg", {
+          sender: currentUser?.full_name || "Someone",
+          devTitle: dev.title || "",
+          preview: trimmed.slice(0, 40),
+        }, devId, "chat");
+      }
+    }
     setText("");
   }
 
@@ -3760,7 +3674,7 @@ function FactoryForm({ fac, onSave, onCancel }) {
 // ─────────────────────────────────────────────────────────────────────────────
 // Users
 // ─────────────────────────────────────────────────────────────────────────────
-function UsersPage({ users, setUsers, factories, currentUser, showToast, askConfirm }) {
+function UsersPage({ users, setUsers, factories, currentUser, showToast, askConfirm, pushNotif }) {
   const [editingId, setEditingId] = useState(null);
   const [editName, setEditName]   = useState("");
   const [editChineseName, setEditChineseName] = useState("");
@@ -3780,6 +3694,18 @@ function UsersPage({ users, setUsers, factories, currentUser, showToast, askConf
   const pendingUsers  = users.filter(u => u.status === "pending");
   const blockedUsers  = users.filter(u => u.status === "blocked");
   const activeUsers   = users.filter(u => u.status !== "pending" && u.status !== "blocked");
+
+  // Notify this admin about pending users they haven't been notified about yet
+  const notifiedPendingRef = useRef(new Set());
+  useEffect(() => {
+    if (!currentUser?.id || currentUser.role !== "admin" || !pushNotif) return;
+    pendingUsers.forEach(u => {
+      if (!notifiedPendingRef.current.has(u.id)) {
+        notifiedPendingRef.current.add(u.id);
+        pushNotif(currentUser.id, "pending", { name: u.full_name, email: u.email }, null, "pending");
+      }
+    });
+  }, [pendingUsers.length]);
 
   async function approveUser(u) {
     const updated = { ...u, status: "approved" };
