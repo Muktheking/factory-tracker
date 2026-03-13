@@ -823,7 +823,7 @@ export default function App() {
   useEffect(() => {
     async function checkAndSetSession(session) {
       if (!session) { setSession(null); return; }
-      // Require a valid active user row — blocks deleted users and pending users
+      // Require a valid active user row — blocks deleted, pending, and blocked users
       const { data: userRow } = await supabase.from("users").select("status").eq("email", session.user.email).maybeSingle();
       if (!userRow || userRow.status === "pending" || userRow.status === "blocked") {
         await supabase.auth.signOut();
@@ -832,6 +832,7 @@ export default function App() {
       }
       setSession(session);
     }
+    // Always re-validate the current session on mount (catches stale sessions)
     supabase.auth.getSession().then(({ data: { session } }) => checkAndSetSession(session));
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       checkAndSetSession(session);
@@ -978,6 +979,21 @@ export default function App() {
     }, 15000);
     return () => clearInterval(interval);
   }, [session, currentUser]);
+
+  // Re-validate session every 60s — kicks out blocked/deleted users even if already logged in
+  useEffect(() => {
+    if (!session) return;
+    const interval = setInterval(async () => {
+      const email = session?.user?.email;
+      if (!email) return;
+      const { data: userRow } = await supabase.from("users").select("status").eq("email", email).maybeSingle();
+      if (!userRow || userRow.status === "pending" || userRow.status === "blocked") {
+        await supabase.auth.signOut();
+        setSession(null);
+      }
+    }, 60000);
+    return () => clearInterval(interval);
+  }, [session]);
 
   async function signOut() {
     await supabase.auth.signOut();
@@ -3177,16 +3193,25 @@ function UsersPage({ users, setUsers, factories, currentUser, showToast, askConf
     if (!newName || !newEmail || !newPassword) { showToast("Please fill all fields", "error"); return; }
     if (newPassword.length < 6) { showToast("Password must be at least 6 characters", "error"); return; }
     setAddingUser(true);
-    const { error: signUpError } = await supabase.auth.signUp({
+    const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
       email: newEmail, password: newPassword, options: { data: { full_name: newName } }
     });
-    if (signUpError) { showToast("Error: " + signUpError.message, "error"); setAddingUser(false); return; }
-    const newUser = { id: genId("U"), full_name: newName, email: newEmail, role: newRole };
+    // If auth signup fails because email already exists in Auth, we can still
+    // create/restore the users table row so the person can be managed in the app
+    if (signUpError && !signUpError.message?.toLowerCase().includes("already")) {
+      showToast("Error: " + signUpError.message, "error"); setAddingUser(false); return;
+    }
+    // Use the existing auth user's id if available, otherwise generate one
+    const authId = signUpData?.user?.id;
+    const newUser = {
+      id: authId ? "U-" + authId.slice(0, 8).toUpperCase() : genId("U"),
+      full_name: newName, email: newEmail, role: newRole, status: "approved"
+    };
     const saved = await db.upsertUser(newUser);
-    if (saved) setUsers((p) => [...p, saved]);
+    if (saved) setUsers((p) => [...p.filter(u => u.email !== newEmail), saved]);
     setShowAddUser(false); setNewName(""); setNewEmail(""); setNewPassword(""); setNewRole("user");
     setAddingUser(false);
-    showToast(`✓ User ${newName} created! They can now log in.`);
+    showToast(`✓ User ${newName} added — they can now log in.`);
   }
 
   async function resetPassword(email) {
