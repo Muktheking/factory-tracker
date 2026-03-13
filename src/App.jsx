@@ -325,7 +325,7 @@ const DEV_STATUS_CSS = {
 };
 const DEV_STATUS_LABEL = () => ({ open: t("open"), in_progress: t("inProgress"), completed: t("completed"), cancelled: t("cancelled") });
 const MAT_LABEL = { not_started: "Not Started", sourcing: "Sourcing", ordered: "Ordered", received: "Received", unavailable: "Unavailable" };
-const ROLE_CSS  = { admin: "bg-purple-100 text-purple-700", user: "bg-blue-100 text-blue-700", supplier: "bg-orange-100 text-orange-700" };
+const ROLE_CSS  = { admin: "bg-purple-100 text-purple-700", user: "bg-blue-100 text-blue-700", supplier: "bg-orange-100 text-orange-700", viewer: "bg-teal-100 text-teal-700" };
 
 function genId(prefix) {
   return prefix + Date.now().toString(36).toUpperCase().slice(-4) + Math.random().toString(36).slice(2,5).toUpperCase();
@@ -522,6 +522,181 @@ function ConfirmDialog({ message, onConfirm, onCancel }) {
           <Btn variant="danger" onClick={onConfirm}>Delete</Btn>
         </div>
       </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Slideshow Viewer — for "viewer" role, shown on TV/big screen
+// ─────────────────────────────────────────────────────────────────────────────
+function SlideshowViewer({ visits, onSignOut }) {
+  const SLIDE_DURATION = 30000; // 30 seconds per slide
+  const sorted = [...visits]
+    .filter(v => v.picture_url || v.additional_pictures?.length > 0)
+    .sort((a, b) => new Date(b.visit_date) - new Date(a.visit_date));
+  const all = [...visits].sort((a, b) => new Date(b.visit_date) - new Date(a.visit_date));
+  const slides = sorted.length > 0 ? sorted : all;
+
+  const [idx, setIdx] = useState(0);
+  const [fade, setFade] = useState(true);
+  const [progress, setProgress] = useState(0);
+  const [paused, setPaused] = useState(false);
+  const progressRef = useRef(null);
+  const startRef = useRef(Date.now());
+
+  const current = slides[idx] || null;
+
+  // Collect all photos for current slide
+  const photos = [];
+  if (current?.picture_url) photos.push(current.picture_url);
+  if (current?.additional_pictures?.length) photos.push(...current.additional_pictures);
+  const [photoIdx, setPhotoIdx] = useState(0);
+
+  function goTo(newIdx) {
+    setFade(false);
+    setTimeout(() => {
+      setIdx(newIdx);
+      setPhotoIdx(0);
+      setFade(true);
+      setProgress(0);
+      startRef.current = Date.now();
+    }, 400);
+  }
+
+  function next() { goTo((idx + 1) % slides.length); }
+  function prev() { goTo((idx - 1 + slides.length) % slides.length); }
+
+  // Progress bar + auto-advance
+  useEffect(() => {
+    if (paused || !slides.length) return;
+    progressRef.current = setInterval(() => {
+      const elapsed = Date.now() - startRef.current;
+      const pct = Math.min((elapsed / SLIDE_DURATION) * 100, 100);
+      setProgress(pct);
+      if (pct >= 100) {
+        clearInterval(progressRef.current);
+        next();
+      }
+    }, 100);
+    return () => clearInterval(progressRef.current);
+  }, [idx, paused, slides.length]);
+
+  // Cycle through multiple photos within a slide
+  useEffect(() => {
+    if (photos.length <= 1) return;
+    const t = setInterval(() => {
+      setPhotoIdx(p => (p + 1) % photos.length);
+    }, SLIDE_DURATION / photos.length);
+    return () => clearInterval(t);
+  }, [idx, photos.length]);
+
+  if (!slides.length) return (
+    <div className="min-h-screen bg-black flex items-center justify-center text-white text-2xl">No visits to display</div>
+  );
+
+  return (
+    <div className="min-h-screen bg-black flex flex-col relative overflow-hidden select-none"
+      onClick={() => next()}>
+      {/* Big photo */}
+      <div className={`absolute inset-0 transition-opacity duration-500 ${fade ? "opacity-100" : "opacity-0"}`}>
+        {photos.length > 0 ? (
+          <img src={photos[photoIdx]} alt="" className="w-full h-full object-contain bg-black" />
+        ) : (
+          <div className="w-full h-full flex items-center justify-center">
+            <div className="flex flex-col items-center gap-4 text-slate-600">
+              <svg width="80" height="80" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={0.8}><rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline strokeLinecap="round" strokeLinejoin="round" points="21 15 16 10 5 21"/></svg>
+              <span className="text-xl">No photo</span>
+            </div>
+          </div>
+        )}
+        {/* Dark gradient overlay at bottom */}
+        <div className="absolute inset-x-0 bottom-0 h-2/5 bg-gradient-to-t from-black/95 via-black/60 to-transparent" />
+        {/* Subtle top gradient for controls */}
+        <div className="absolute inset-x-0 top-0 h-24 bg-gradient-to-b from-black/60 to-transparent" />
+      </div>
+
+      {/* Top bar: logo + slide counter + sign out */}
+      <div className="relative z-10 flex items-center justify-between px-8 pt-6">
+        <div className="flex items-center gap-3">
+          <div className="w-8 h-8 rounded-lg bg-amber-500 flex items-center justify-center">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>
+          </div>
+          <span className="text-white font-bold text-lg tracking-wide">Loka Fashion</span>
+        </div>
+        <div className="flex items-center gap-4">
+          <span className="text-white/60 text-sm font-medium">{idx + 1} / {slides.length}</span>
+          <button onClick={(e) => { e.stopPropagation(); onSignOut(); }}
+            className="text-white/40 hover:text-white/80 text-xs px-3 py-1.5 rounded-lg border border-white/20 hover:border-white/40 transition-all">
+            Exit
+          </button>
+        </div>
+      </div>
+
+      {/* Bottom info bar */}
+      <div className={`relative z-10 mt-auto px-8 pb-8 transition-opacity duration-500 ${fade ? "opacity-100" : "opacity-0"}`}>
+        {/* Photo dots if multiple */}
+        {photos.length > 1 && (
+          <div className="flex gap-2 mb-4">
+            {photos.map((_, i) => (
+              <div key={i} className={`h-1 rounded-full transition-all duration-300 ${i === photoIdx ? "w-6 bg-amber-400" : "w-2 bg-white/30"}`} />
+            ))}
+          </div>
+        )}
+
+        <div className="flex items-end justify-between gap-8">
+          <div className="flex-1 min-w-0">
+            {/* Factory name */}
+            <div className="flex items-center gap-2 mb-2">
+              <span className="text-amber-400 text-xs font-semibold uppercase tracking-widest">Factory Visit</span>
+              <span className="w-1 h-1 rounded-full bg-white/30" />
+              <span className="text-white/50 text-xs">{fmtDate(current.visit_date, true)}</span>
+            </div>
+            <h2 className="text-white text-3xl font-bold leading-tight mb-1 truncate">{current.factory_name}</h2>
+            <p className="text-amber-200 text-lg font-medium truncate">{current.item}</p>
+            {current.purpose && (
+              <p className="text-white/60 text-sm mt-2 line-clamp-2 max-w-2xl">{current.purpose}</p>
+            )}
+          </div>
+
+          <div className="flex-shrink-0 text-right space-y-3">
+            {current.visitor_name && (
+              <div className="flex items-center justify-end gap-2">
+                <div className="text-right">
+                  <p className="text-white/40 text-xs uppercase tracking-wide">Visitor</p>
+                  <p className="text-white font-semibold">{current.visitor_name}</p>
+                </div>
+                <div className="w-10 h-10 rounded-full bg-amber-500/30 border border-amber-500/50 flex items-center justify-center text-amber-300 text-lg font-bold">
+                  {current.visitor_name[0]}
+                </div>
+              </div>
+            )}
+            {current.location_address && (
+              <div className="flex items-center justify-end gap-2 text-white/50 text-xs max-w-xs">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
+                <span className="truncate max-w-[220px]">{current.location_address}</span>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Progress bar */}
+        <div className="mt-6 h-0.5 bg-white/10 rounded-full overflow-hidden">
+          <div className="h-full bg-amber-400 rounded-full transition-none" style={{ width: `${progress}%` }} />
+        </div>
+      </div>
+
+      {/* Prev/Next arrows — visible on hover */}
+      <button onClick={(e) => { e.stopPropagation(); prev(); }}
+        className="absolute left-4 top-1/2 -translate-y-1/2 z-20 w-12 h-12 rounded-full bg-white/10 hover:bg-white/25 flex items-center justify-center text-white transition-all opacity-0 hover:opacity-100 group-hover:opacity-100">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+      </button>
+      <button onClick={(e) => { e.stopPropagation(); next(); }}
+        className="absolute right-4 top-1/2 -translate-y-1/2 z-20 w-12 h-12 rounded-full bg-white/10 hover:bg-white/25 flex items-center justify-center text-white transition-all opacity-0 hover:opacity-100">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+      </button>
+
+      {/* Pause on hover hint */}
+      <div className="absolute bottom-2 left-1/2 -translate-x-1/2 text-white/20 text-xs z-20">Click anywhere to skip →</div>
     </div>
   );
 }
@@ -1084,6 +1259,7 @@ export default function App() {
   const role = currentUser?.role || "user";
   const isAdmin = role === "admin";
   const isSupplier = role === "supplier";
+  const isViewer = role === "viewer";
 
   const navItems = [
     { id: "dashboard",    icon: Icon.grid,      label: t("dashboard") },
@@ -1102,6 +1278,9 @@ export default function App() {
   // Logged in but data still loading
   if (loading) return <LoadingScreen message={t("loading")} />;
   if (dbError) return <ErrorScreen error={dbError} />;
+
+  // Viewer role — fullscreen slideshow only
+  if (isViewer) return <SlideshowViewer visits={visits} onSignOut={async () => { await supabase.auth.signOut(); setSession(null); }} />;
 
   let content = null;
   if (detail?.type === "dev") {
@@ -3328,11 +3507,12 @@ function UsersPage({ users, setUsers, factories, currentUser, showToast, askConf
             </div>
             {!notAdmin && <Btn variant="amber" onClick={() => setShowAddUser(s => !s)}>{Icon.plus} {t("addUser")}</Btn>}
           </div>
-          <div className="grid grid-cols-4 gap-3">
+          <div className="grid grid-cols-5 gap-3">
             {[
               { label: "Admins",    count: users.filter(u => u.role === "admin" && u.status !== "blocked").length,    color: "bg-purple-500/20 border-purple-500/30", text: "text-purple-200" },
               { label: "Users",     count: users.filter(u => u.role === "user" && u.status !== "blocked").length,     color: "bg-blue-500/20 border-blue-500/30",     text: "text-blue-200" },
               { label: "Suppliers", count: users.filter(u => u.role === "supplier" && u.status !== "blocked").length, color: "bg-orange-500/20 border-orange-500/30", text: "text-orange-200" },
+              { label: "Viewers",   count: users.filter(u => u.role === "viewer" && u.status !== "blocked").length,   color: "bg-teal-500/20 border-teal-500/30",     text: "text-teal-200" },
               { label: "Blocked",   count: blockedUsers.length, color: "bg-red-500/20 border-red-500/30",   text: "text-red-200" },
             ].map(({ label, count, color, text }) => (
               <div key={label} className={`rounded-xl p-4 border ${color}`}>
@@ -3384,6 +3564,7 @@ function UsersPage({ users, setUsers, factories, currentUser, showToast, askConf
                   <option value="admin">Admin</option>
                   <option value="user">User</option>
                   <option value="supplier">Supplier</option>
+                  <option value="viewer">Viewer (Slideshow)</option>
                 </Select>
               </div>
             </div>
@@ -3420,7 +3601,7 @@ function UsersPage({ users, setUsers, factories, currentUser, showToast, askConf
                     </td>
                     <td className="px-5 py-4">
                       {editingId === u.id
-                        ? <Select value={editRole} onChange={setEditRole} className="h-9 w-28"><option value="admin">Admin</option><option value="user">User</option><option value="supplier">Supplier</option></Select>
+                        ? <Select value={editRole} onChange={setEditRole} className="h-9 w-28"><option value="admin">Admin</option><option value="user">User</option><option value="supplier">Supplier</option><option value="viewer">Viewer (Slideshow)</option></Select>
                         : <Badge className={ROLE_CSS[u.role] || ROLE_CSS.user}>{u.role || "user"}</Badge>}
                     </td>
                     <td className="px-5 py-4">
