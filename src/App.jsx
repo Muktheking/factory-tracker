@@ -599,9 +599,7 @@ function SlideshowViewer({ visits, devs, onSignOut }) {
   const TopBar = ({ label, counter }) => (
     <div className="relative z-10 flex items-center justify-between px-12 pt-8 pb-4">
       <div className="flex items-center gap-4">
-        <div className="w-14 h-14 rounded-2xl bg-amber-500 flex items-center justify-center shadow-lg">
-          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>
-        </div>
+        <LokaLogo size={56} />
         <div>
           <p className="text-white font-black text-3xl tracking-tight">Loka Fashion</p>
           <p className="text-amber-400 text-base font-medium">{label}</p>
@@ -668,7 +666,7 @@ function SlideshowViewer({ visits, devs, onSignOut }) {
                 <span className="w-2 h-2 rounded-full bg-white/30" />
                 <span className="text-white/60 text-xl">{fmtDate(visit.visit_date, true)}</span>
               </div>
-              <h2 className="text-white font-black leading-none mb-3 truncate" style={{fontSize:"clamp(2.5rem,5vw,4.5rem)"}}>{visit.factory_name}</h2>
+              <h2 className="text-white font-black leading-tight mb-3" style={{fontSize:"clamp(2rem,4vw,3.5rem)",wordBreak:"break-word"}}>{visit.factory_name}</h2>
               <p className="text-amber-300 font-bold mb-3 truncate" style={{fontSize:"clamp(1.5rem,3vw,2.5rem)"}}>{visit.item}</p>
               {visit.purpose && <p className="text-white/70 leading-relaxed line-clamp-2" style={{fontSize:"clamp(1rem,1.8vw,1.5rem)"}}>{visit.purpose}</p>}
             </div>
@@ -730,19 +728,23 @@ function SlideshowViewer({ visits, devs, onSignOut }) {
               {recentVisits.map((v, i) => {
                 const photo = v.picture_url || v.additional_pictures?.[0];
                 return (
-                  <div key={v.id} className={`rounded-2xl overflow-hidden bg-slate-800 flex flex-col border border-white/5 ${i === current.index - 1 || i === current.index ? "ring-2 ring-amber-400" : ""}`}>
-                    <div className="h-32 bg-slate-700 flex-shrink-0 overflow-hidden">
+                  <div key={v.id} className={`rounded-2xl overflow-hidden bg-slate-800 flex flex-col border transition-all ${i === (seqIdx - 1) / 2 ? "border-amber-400 ring-2 ring-amber-400 scale-105 shadow-xl shadow-amber-900/40" : "border-white/5"}`}>
+                    <div className="h-32 bg-slate-700 flex-shrink-0 overflow-hidden relative">
                       {photo
                         ? <img src={photo} alt="" className="w-full h-full object-cover" />
                         : <div className="w-full h-full flex items-center justify-center text-slate-600">
                             <svg width="32" height="32" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1}><rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
                           </div>
                       }
+                      {i === (seqIdx - 1) / 2 && (
+                        <div className="absolute top-2 right-2 bg-amber-400 text-black text-xs font-bold px-2 py-0.5 rounded-full">NOW</div>
+                      )}
                     </div>
                     <div className="p-3 flex-1">
-                      <p className="text-white font-bold text-base leading-tight truncate">{v.factory_name}</p>
-                      <p className="text-amber-400 text-sm truncate mt-0.5">{v.item}</p>
-                      <p className="text-white/40 text-xs mt-1">{fmtDate(v.visit_date, true)}</p>
+                      <p className="text-white font-bold text-sm leading-tight truncate">{v.factory_name}</p>
+                      <p className="text-amber-400 text-xs truncate mt-0.5">{v.item}</p>
+                      {v.visitor_name && <p className="text-white/50 text-xs mt-1 flex items-center gap-1">👤 {v.visitor_name}</p>}
+                      <p className="text-white/30 text-xs mt-1">{fmtDate(v.visit_date, true)}</p>
                     </div>
                   </div>
                 );
