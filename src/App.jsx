@@ -293,7 +293,32 @@ const db = {
       messages: (messages || []).filter(m => m.development_id === d.id),
     }));
   },
-  async upsertDev(d)            { const { data, error } = await supabase.from("developments").upsert(d).select().single(); if (error) { alert("Save failed: " + error.message); } return data; },
+  async upsertDev(d) {
+    // Only send columns that exist in the developments table
+    const allowed = ["id","title","department","client_name","buyer_name","mail_subject",
+      "factory_ids","factory_names","team_member_name","team_member_id",
+      "assigned_user_id","assigned_user_name",
+      "material","size","weight","internal_estimated_date","internal_estimated_price",
+      "internal_notes","special_remarks","picture_url","additional_pictures",
+      "artwork_files","status","status_history","created_date"];
+    const record = Object.fromEntries(Object.entries(d).filter(([k]) => allowed.includes(k)));
+    const { data, error } = await supabase.from("developments").upsert(record).select().single();
+    if (error) {
+      // If new columns don't exist yet, retry with only the base columns
+      if (error.message?.includes("column") && error.message?.includes("schema cache")) {
+        const base = ["id","title","department","client_name","buyer_name","mail_subject",
+          "factory_ids","factory_names","team_member_name","team_member_id",
+          "material","size","weight","internal_estimated_date","internal_estimated_price",
+          "special_remarks","picture_url","additional_pictures",
+          "artwork_files","status","status_history","created_date"];
+        const fallback = Object.fromEntries(Object.entries(d).filter(([k]) => base.includes(k)));
+        const { data: d2, error: e2 } = await supabase.from("developments").upsert(fallback).select().single();
+        if (e2) { alert("Save failed: " + e2.message); } return d2;
+      }
+      alert("Save failed: " + error.message);
+    }
+    return data;
+  },
   async deleteDev(id)           { await supabase.from("developments").delete().eq("id", id); },
   async insertUpdate(u)         { const { data } = await supabase.from("development_updates").insert(u).select().single(); return data; },
   async insertMessage(m)        { const { data } = await supabase.from("development_messages").insert(m).select().single(); return data; },
@@ -3016,7 +3041,7 @@ function DevDetailPage({ devId, devs, setDevs, factories, getFactory, getUser, o
                     </div>
                     {showUpdateForm && <FactoryUpdateForm dev={dev} onSave={saveUpdate} onCancel={() => setShowUpdateForm(false)} />}
                     {/* Supplier confirmation — shown only if supplier hasn't confirmed yet */}
-                    {isSupplier && !dev.supplier_confirmed && !dev.updates?.length && (
+                    {isSupplier && !dev.status_history?.some(h => h.status === "supplier_confirmed") && !dev.updates?.length && (
                       <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-5 text-center space-y-3">
                         <div className="w-12 h-12 bg-emerald-100 rounded-full flex items-center justify-center mx-auto">
                           <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#059669" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
@@ -3031,15 +3056,15 @@ function DevDetailPage({ devId, devs, setDevs, factories, getFactory, getUser, o
                             label: "Supplier confirmed receipt & started process",
                           };
                           const newHistory = [...(dev.status_history || []), confirmEntry];
-                          await db.upsertDev({ ...dev, supplier_confirmed: true, status_history: newHistory, updates: undefined, messages: undefined });
-                          setDevs(p => p.map(d => d.id === devId ? { ...d, supplier_confirmed: true, status_history: newHistory } : d));
+                          await db.upsertDev({ ...dev, status_history: newHistory, updates: undefined, messages: undefined });
+                          setDevs(p => p.map(d => d.id === devId ? { ...d, status_history: newHistory } : d));
                           showToast("✅ Confirmed! You can now submit updates.");
                         }} className="mx-auto">
                           ✅ Confirm Receipt & Start Process
                         </Btn>
                       </div>
                     )}
-                    {isSupplier && dev.supplier_confirmed && !dev.updates?.length && (
+                    {isSupplier && dev.status_history?.some(h => h.status === "supplier_confirmed") && !dev.updates?.length && (
                       <p className="text-center text-slate-400 text-sm py-8">No updates submitted yet. Use "Submit Update" to post progress.</p>
                     )}
                     {!isSupplier && (!dev.updates || dev.updates.length === 0) && (
