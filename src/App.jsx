@@ -797,6 +797,9 @@ export default function App() {
       ? `${n.msgData.visitor || "有人"} 拜访了 ${n.msgData.factory || ""}`
       : `${n.msgData.visitor || "Someone"} visited ${n.msgData.factory || ""}`;
     if (k === "pending") return `${globalLang === "zh" ? "新账户申请" : "New signup request"}: ${n.msgData.name || ""} (${n.msgData.email || ""})`;
+    if (k === "devUpdate") return globalLang === "zh"
+      ? `${n.msgData.factory || "工厂"} 更新了 "${n.msgData.title || "开发"}"${n.msgData.notes ? `: ${n.msgData.notes}` : ""}`
+      : `${n.msgData.factory || "Factory"} posted update on "${n.msgData.title || "a development"}"${n.msgData.notes ? `: ${n.msgData.notes}` : ""}`;
     if (k === "newMsgCount") return globalLang === "zh"
       ? `${n.msgData.count} 条新消息`
       : `${n.msgData.count} new message${n.msgData.count > 1 ? "s" : ""}`;
@@ -883,7 +886,26 @@ export default function App() {
           // suppliers and regular users don't get notified of other people's new developments
         }
       })
-      .on("postgres_changes", { event: "*", schema: "public", table: "development_updates" }, () => { db.getDevs().then(setDevs); })
+      .on("postgres_changes", { event: "*", schema: "public", table: "development_updates" }, (payload) => {
+        db.getDevs().then((newDevs) => {
+          setDevs(newDevs);
+          const cu = currentUserRef.current;
+          if (!cu || payload.eventType !== "INSERT") return;
+          const upd = payload.new;
+          const relatedDev = newDevs.find(d => d.id === upd?.development_id);
+          if (!relatedDev) return;
+          // Notify admin and the dev's team member (but not the person who submitted)
+          const submitterFactory = upd.factory_name || upd.factory_id;
+          const isInvolved = cu.role === "admin" || relatedDev.team_member_id === cu.id;
+          if (isInvolved) {
+            addNotification("devUpdate", {
+              factory: submitterFactory,
+              title: relatedDev.title || "",
+              notes: upd.notes?.slice(0, 40) || "",
+            }, relatedDev.id, "dev");
+          }
+        });
+      })
       .on("postgres_changes", { event: "*", schema: "public", table: "development_messages" }, (payload) => {
         db.getDevs().then((newDevs) => {
           setDevs(newDevs);
@@ -1917,6 +1939,24 @@ function DevelopmentsPage({ devs, setDevs, factories, users, currentUser, onView
   const isSupplier = currentUser?.role === "supplier";
   const [filterUser, setFilterUser] = useState("all");
   const [supplierTab, setSupplierTab] = useState("active");
+  // seenUpdates: map of devId -> latest update date/id we've seen (persisted in sessionStorage)
+  const [seenUpdates, setSeenUpdates] = useState(() => {
+    try { return JSON.parse(sessionStorage.getItem("seenUpdates") || "{}"); } catch { return {}; }
+  });
+  function markSeen(devId, latestDate) {
+    setSeenUpdates(prev => {
+      const next = { ...prev, [devId]: latestDate };
+      try { sessionStorage.setItem("seenUpdates", JSON.stringify(next)); } catch {}
+      return next;
+    });
+  }
+  function hasNewUpdate(dev) {
+    if (!dev.updates?.length) return false;
+    const latest = dev.updates[0]?.created_date; // updates are newest-first
+    if (!latest) return false;
+    const seen = seenUpdates[dev.id];
+    return !seen || new Date(latest) > new Date(seen);
+  }
   const allUsers = [...new Set(devs.map(d => d.team_member_name).filter(Boolean))];
 
   // Factory-aware stats
@@ -2042,7 +2082,7 @@ function DevelopmentsPage({ devs, setDevs, factories, users, currentUser, onView
                           )}
                           <div className="mt-3 flex items-center justify-between">
                             <p className="text-xs text-slate-400">{fmtDate(dev.created_date)}</p>
-                            <Btn variant="purple" size="sm" onClick={() => onView(dev.id)}>View & Update →</Btn>
+                            <Btn variant="purple" size="sm" onClick={() => { markSeen(dev.id, dev.updates?.[0]?.created_date); onView(dev.id); }}>View & Update →</Btn>
                           </div>
                         </div>
                       </div>
@@ -2142,7 +2182,8 @@ function DevelopmentsPage({ devs, setDevs, factories, users, currentUser, onView
                     <DevCard key={d.id} dev={d}
                       onEdit={isAdmin ? () => { setEditingDev(d); setShowForm(true); } : null}
                       onDelete={isAdmin ? () => deleteDev(d.id) : null}
-                      onView={() => onView(d.id)} />
+                      hasNewUpdate={hasNewUpdate(d)}
+                      onView={() => { markSeen(d.id, d.updates?.[0]?.created_date); onView(d.id); }} />
                   ))}
                 </div>
             }
@@ -2153,7 +2194,7 @@ function DevelopmentsPage({ devs, setDevs, factories, users, currentUser, onView
   );
 }
 
-function DevCard({ dev, onEdit, onDelete, onView }) {
+function DevCard({ dev, onEdit, onDelete, onView, hasNewUpdate }) {
   const needsFollowUp = (dev.status === "open" || dev.status === "in_progress") && (!dev.updates || dev.updates.length === 0) && daysAgo(dev.created_date) >= 3;
   const isActive    = dev.status === "open" || dev.status === "in_progress";
   const isCompleted = dev.status === "completed";
@@ -2176,11 +2217,19 @@ function DevCard({ dev, onEdit, onDelete, onView }) {
   return (
     <Card className={`shadow-sm hover:shadow-lg transition-all overflow-hidden ${needsFollowUp ? "border-l-4 border-l-orange-400" : ""}`}>
       <div className="flex">
-        <div className="w-40 sm:w-52 flex-shrink-0 self-stretch bg-gradient-to-br from-slate-100 to-slate-200 flex items-center justify-center text-slate-400">
+        <div className="w-40 sm:w-52 flex-shrink-0 self-stretch bg-gradient-to-br from-slate-100 to-slate-200 flex items-center justify-center text-slate-400 relative">
           {dev.picture_url ? <img src={dev.picture_url} alt={dev.title} className="w-full h-full object-contain bg-slate-100" /> : <div className="flex flex-col items-center gap-1 text-slate-300">
                   <svg width="24" height="24" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.2}><rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline strokeLinecap="round" strokeLinejoin="round" points="21 15 16 10 5 21"/></svg>
                   <span className="text-xs">No photo</span>
                 </div>}
+          {hasNewUpdate && (
+            <div className="absolute inset-0 flex items-center justify-center">
+              <div className="bg-emerald-500 text-white text-xs font-bold px-3 py-1.5 rounded-full shadow-lg flex items-center gap-1.5 animate-pulse">
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="10"/><path fill="white" d="M9 12l2 2 4-4" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" fill="none"/></svg>
+                New Update
+              </div>
+            </div>
+          )}
         </div>
         <div className="flex-1 p-4">
           <div className="flex items-center gap-2 mb-1 flex-wrap">
@@ -2648,6 +2697,7 @@ function DevDetailPage({ devId, devs, setDevs, factories, getFactory, getUser, o
 }
 
 function FactoryUpdateForm({ dev, onSave, onCancel }) {
+  const isFirstUpdate = !dev.updates?.length;
   const [form, setForm] = useState({
     factory_id: dev.factory_ids?.[0] || "", factory_name: dev.factory_names?.[0] || "",
     type: "progress", materials_status: "not_started",
@@ -2685,7 +2735,7 @@ function FactoryUpdateForm({ dev, onSave, onCancel }) {
         </div>
         <div><Label>Materials Arrival</Label><Input type="date" value={form.materials_arrival_date} onChange={(e) => set("materials_arrival_date", e.target.value)} /></div>
         <div><Label>Est. Finish Date</Label><Input type="date" value={form.estimated_finish_date} onChange={(e) => set("estimated_finish_date", e.target.value)} /></div>
-        <div><Label>{t("supplierPrice")}</Label><Input value={form.supplier_price} onChange={(e) => set("supplier_price", e.target.value)} placeholder="0.00" /></div>
+        {isFirstUpdate && <div><Label>{t("supplierPrice")}</Label><Input value={form.supplier_price} onChange={(e) => set("supplier_price", e.target.value)} placeholder="0.00" /></div>}
       </div>
       <div><Label>Production Status</Label><Textarea value={form.production_status} onChange={(e) => set("production_status", e.target.value)} placeholder="Current stage…" rows={2} /></div>
       <div><Label>Notes</Label><Textarea value={form.notes} onChange={(e) => set("notes", e.target.value)} placeholder="Additional notes…" rows={2} /></div>
