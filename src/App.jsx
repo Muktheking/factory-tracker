@@ -757,9 +757,6 @@ function SlideshowViewer({ visits, devs, onSignOut }) {
   );
 }
 
-  );
-}
-
 // Loading screen
 function LoadingScreen({ message = "Connecting to database…" }) {
   return (
