@@ -3153,7 +3153,8 @@ function UsersPage({ users, setUsers, factories, currentUser, showToast, askConf
   const notAdmin = currentUser?.role !== "admin";
 
   const pendingUsers  = users.filter(u => u.status === "pending");
-  const activeUsers   = users.filter(u => u.status !== "pending");
+  const blockedUsers  = users.filter(u => u.status === "blocked");
+  const activeUsers   = users.filter(u => u.status !== "pending" && u.status !== "blocked");
 
   async function approveUser(u) {
     const updated = { ...u, status: "approved" };
@@ -3260,11 +3261,12 @@ function UsersPage({ users, setUsers, factories, currentUser, showToast, askConf
             </div>
             {!notAdmin && <Btn variant="amber" onClick={() => setShowAddUser(s => !s)}>{Icon.plus} {t("addUser")}</Btn>}
           </div>
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-4 gap-3">
             {[
-              { label: "Admins",    count: users.filter(u => u.role === "admin").length,    color: "bg-purple-500/20 border-purple-500/30", text: "text-purple-200" },
-              { label: "Users",     count: users.filter(u => u.role === "user").length,     color: "bg-blue-500/20 border-blue-500/30",     text: "text-blue-200" },
-              { label: "Suppliers", count: users.filter(u => u.role === "supplier").length, color: "bg-orange-500/20 border-orange-500/30", text: "text-orange-200" },
+              { label: "Admins",    count: users.filter(u => u.role === "admin" && u.status !== "blocked").length,    color: "bg-purple-500/20 border-purple-500/30", text: "text-purple-200" },
+              { label: "Users",     count: users.filter(u => u.role === "user" && u.status !== "blocked").length,     color: "bg-blue-500/20 border-blue-500/30",     text: "text-blue-200" },
+              { label: "Suppliers", count: users.filter(u => u.role === "supplier" && u.status !== "blocked").length, color: "bg-orange-500/20 border-orange-500/30", text: "text-orange-200" },
+              { label: "Blocked",   count: blockedUsers.length, color: "bg-red-500/20 border-red-500/30",   text: "text-red-200" },
             ].map(({ label, count, color, text }) => (
               <div key={label} className={`rounded-xl p-4 border ${color}`}>
                 <p className="text-2xl font-bold text-white">{count}</p>
@@ -3325,7 +3327,7 @@ function UsersPage({ users, setUsers, factories, currentUser, showToast, askConf
           </Card>
         )}
         <Card className="shadow-lg overflow-hidden">
-          <div className="p-5 border-b border-slate-100"><h2 className="font-semibold text-slate-800">All Users ({users.length})</h2></div>
+          <div className="p-5 border-b border-slate-100"><h2 className="font-semibold text-slate-800">Active Users ({activeUsers.length})</h2></div>
           <div className="overflow-x-auto">
             <table className="w-full">
               <thead className="bg-slate-50 border-b border-slate-200">
@@ -3334,7 +3336,7 @@ function UsersPage({ users, setUsers, factories, currentUser, showToast, askConf
                 ))}</tr>
               </thead>
               <tbody className="bg-white divide-y divide-slate-100">
-                {users.map((u) => (
+                {activeUsers.map((u) => (
                   <tr key={u.id} className="hover:bg-slate-50 transition-colors">
                     <td className="px-5 py-4">
                       {editingId === u.id
@@ -3369,18 +3371,9 @@ function UsersPage({ users, setUsers, factories, currentUser, showToast, askConf
                         ? <div className="flex items-center justify-end gap-2"><Btn variant="dark" size="sm" onClick={() => saveEdit(u)}>{Icon.check}</Btn><Btn variant="outline" size="sm" onClick={() => setEditingId(null)}>{Icon.close}</Btn></div>
                         : !notAdmin && (
                           <div className="flex items-center justify-end gap-1">
-                            {u.status === "blocked"
-                              ? <>
-                                  <span className="text-xs px-2 py-0.5 rounded-full bg-red-100 text-red-700 font-medium mr-1">Blocked</span>
-                                  <Btn variant="ghost" size="sm" onClick={() => unblockUser(u)} className="text-green-600 hover:text-green-800">✓ Unblock</Btn>
-                                  <Btn variant="ghost" size="sm" onClick={() => permanentlyDeleteUser(u)} className="text-red-600 hover:text-red-800">🗑 Delete</Btn>
-                                </>
-                              : <>
-                                  <Btn variant="ghost" size="sm" onClick={() => startEdit(u)}>{Icon.edit} {t("edit")}</Btn>
-                                  <Btn variant="ghost" size="sm" onClick={() => resetPassword(u.email)} className="text-blue-500 hover:text-blue-700" title="Send password reset email">🔑 Reset</Btn>
-                                  <Btn variant="ghost" size="sm" onClick={() => deleteUser(u.id)} className="text-red-500 hover:text-red-700">🚫 Block</Btn>
-                                </>
-                            }
+                            <Btn variant="ghost" size="sm" onClick={() => startEdit(u)}>{Icon.edit} {t("edit")}</Btn>
+                            <Btn variant="ghost" size="sm" onClick={() => resetPassword(u.email)} className="text-blue-500 hover:text-blue-700" title="Send password reset email">🔑 Reset</Btn>
+                            <Btn variant="ghost" size="sm" onClick={() => deleteUser(u.id)} className="text-red-500 hover:text-red-700">🚫 Block</Btn>
                           </div>
                         )}
                     </td>
@@ -3390,6 +3383,49 @@ function UsersPage({ users, setUsers, factories, currentUser, showToast, askConf
             </table>
           </div>
         </Card>
+
+        {blockedUsers.length > 0 && !notAdmin && (
+          <Card className="shadow-lg overflow-hidden border-red-100">
+            <div className="p-5 border-b border-red-100 bg-red-50 flex items-center gap-2">
+              <span className="text-red-500">🚫</span>
+              <h2 className="font-semibold text-red-800">Blocked Users ({blockedUsers.length})</h2>
+              <span className="text-xs text-red-500 ml-1">— cannot log in</span>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead className="bg-red-50 border-b border-red-100">
+                  <tr>{["User", "Email", "Role", ""].map((h) => (
+                    <th key={h} className="px-5 py-3.5 text-left text-xs font-semibold text-red-400 uppercase tracking-wider whitespace-nowrap">{h}</th>
+                  ))}</tr>
+                </thead>
+                <tbody className="bg-white divide-y divide-red-50">
+                  {blockedUsers.map((u) => (
+                    <tr key={u.id} className="hover:bg-red-50/50 transition-colors">
+                      <td className="px-5 py-4">
+                        <div className="flex items-center gap-3">
+                          <div className="w-8 h-8 rounded-full bg-red-100 flex items-center justify-center text-red-400">{Icon.user}</div>
+                          <span className="font-medium text-slate-500 text-sm">{u.full_name || <span className="italic">No name</span>}</span>
+                        </div>
+                      </td>
+                      <td className="px-5 py-4 text-sm text-slate-400">
+                        <div className="flex items-center gap-1.5">{Icon.mail} {u.email}</div>
+                      </td>
+                      <td className="px-5 py-4">
+                        <Badge className={ROLE_CSS[u.role] || ROLE_CSS.user}>{u.role || "user"}</Badge>
+                      </td>
+                      <td className="px-5 py-4 text-right">
+                        <div className="flex items-center justify-end gap-1">
+                          <Btn variant="ghost" size="sm" onClick={() => unblockUser(u)} className="text-green-600 hover:text-green-800">✓ Unblock</Btn>
+                          <Btn variant="ghost" size="sm" onClick={() => permanentlyDeleteUser(u)} className="text-red-600 hover:text-red-800">🗑 Delete</Btn>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </Card>
+        )}
       </div>
     </div>
   );
