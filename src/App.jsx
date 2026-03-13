@@ -1072,6 +1072,9 @@ export default function App() {
     if (k === "devUpdate") return globalLang === "zh"
       ? `${n.msgData.factory || "工厂"} 更新了 "${n.msgData.title || "开发"}"${n.msgData.notes ? `: ${n.msgData.notes}` : ""}`
       : `${n.msgData.factory || "Factory"} posted update on "${n.msgData.title || "a development"}"${n.msgData.notes ? `: ${n.msgData.notes}` : ""}`;
+    if (k === "newDevSupplier") return globalLang === "zh"
+      ? `新开发任务: "${n.msgData.title || ""}"`
+      : `New development assigned to you: "${n.msgData.title || ""}"`;
     if (k === "newMsgCount") return globalLang === "zh"
       ? `${n.msgData.count} 条新消息`
       : `${n.msgData.count} new message${n.msgData.count > 1 ? "s" : ""}`;
@@ -1152,12 +1155,17 @@ export default function App() {
         db.getDevs().then(setDevs);
         const cu = currentUserRef.current;
         if (!cu) return;
-        if (payload.eventType === "INSERT" && payload.new?.team_member_name !== cu?.full_name) {
-          // Only admin gets notified of all new devs; regular users only get notified if they are on a dev for the same factory
-          if (cu.role === "admin") {
-            addNotification("newDev", {title: payload.new?.title || "", team: payload.new?.team_member_name || ""}, payload.new?.id, "dev");
+        if (payload.eventType === "INSERT") {
+          const newDev = payload.new;
+          if (newDev?.team_member_name !== cu?.full_name) {
+            if (cu.role === "admin") {
+              addNotification("newDev", {title: newDev?.title || "", team: newDev?.team_member_name || ""}, newDev?.id, "dev");
+            }
           }
-          // suppliers and regular users don't get notified of other people's new developments
+          // Notify supplier if this dev is assigned to their factory
+          if (cu.role === "supplier" && newDev?.factory_ids?.includes(cu.factory_id)) {
+            addNotification("newDevSupplier", {title: newDev?.title || ""}, newDev?.id, "dev");
+          }
         }
       })
       .on("postgres_changes", { event: "*", schema: "public", table: "development_updates" }, (payload) => {
@@ -1347,7 +1355,7 @@ export default function App() {
     if (dev) content = (
       <DevDetailPage devId={detail.id} devs={devs} setDevs={setDevs} factories={factories}
         getFactory={getFactory} getUser={getUser} onBack={() => setDetail(null)}
-        currentUser={currentUser} onReminder={() => sendReminder(dev)} showToast={showToast} askConfirm={askConfirm} />
+        currentUser={currentUser} onReminder={() => sendReminder(dev)} showToast={showToast} askConfirm={askConfirm} users={users} />
     );
   } else if (detail?.type === "visit") {
     const visit = visits.find((v) => v.id === detail.id);
@@ -2296,6 +2304,12 @@ function DevelopmentsPage({ devs, setDevs, factories, users, currentUser, onView
 
   const filtered = devs
     .filter((d) => {
+      // Admin sees all. Supplier handled separately. Users see their own + ones assigned to them.
+      if (!isAdmin && !isSupplier) {
+        const isOwner = d.team_member_id === currentUser?.id || d.team_member_name === currentUser?.full_name;
+        const isAssigned = d.assigned_user_id === currentUser?.id;
+        if (!isOwner && !isAssigned) return false;
+      }
       if (tab === "completed") return d.status === "completed" || d.status === "cancelled";
       return d.status === "open" || d.status === "in_progress";
     })
@@ -2359,6 +2373,20 @@ function DevelopmentsPage({ devs, setDevs, factories, users, currentUser, onView
     const myDone   = myDevs.filter(d => d.status === "completed" || d.status === "cancelled");
     const supplierList = supplierTab === "active" ? myActive : myDone;
 
+    // Track which devs the supplier has seen (persisted in localStorage)
+    const [seenDevIds, setSeenDevIds] = useState(() => {
+      try { return JSON.parse(localStorage.getItem(`seenDevs_${currentUser?.id}`) || "[]"); } catch { return []; }
+    });
+    function markDevSeen(devId) {
+      setSeenDevIds(prev => {
+        if (prev.includes(devId)) return prev;
+        const next = [...prev, devId];
+        try { localStorage.setItem(`seenDevs_${currentUser?.id}`, JSON.stringify(next)); } catch {}
+        return next;
+      });
+    }
+    function isNewDev(dev) { return !seenDevIds.includes(dev.id); }
+
     return (
       <div className="min-h-screen bg-gradient-to-br from-slate-50 to-purple-50/20">
         <div className="bg-slate-800 text-white">
@@ -2385,10 +2413,11 @@ function DevelopmentsPage({ devs, setDevs, factories, users, currentUser, onView
                   const unreadCount = (dev.messages || []).filter(m =>
                     m.sender_name !== currentUser?.full_name && !(m.read_by || []).includes(currentUser?.full_name)
                   ).length;
+                  const isNew = isNewDev(dev);
                   return (
                     <div key={dev.id} className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden hover:shadow-md transition-shadow">
                       <div className="flex">
-                        <div className="w-28 flex-shrink-0 bg-gradient-to-br from-slate-100 to-slate-200 flex items-center justify-center relative">
+                        <div className="w-36 flex-shrink-0 bg-gradient-to-br from-slate-100 to-slate-200 flex items-center justify-center relative min-h-[140px]">
                           {dev.picture_url
                             ? <img src={dev.picture_url} alt={dev.title} className="w-full h-full object-cover absolute inset-0" />
                             : <div className="flex flex-col items-center gap-1 text-slate-400">
@@ -2396,6 +2425,17 @@ function DevelopmentsPage({ devs, setDevs, factories, users, currentUser, onView
                                 <span className="text-xs">No photo</span>
                               </div>
                           }
+                          {/* Team member name on thumbnail */}
+                          {dev.team_member_name && (
+                            <div className="absolute bottom-0 left-0 right-0 bg-black/60 px-2 py-1">
+                              <p className="text-white text-xs font-medium truncate text-center">👤 {dev.team_member_name}</p>
+                            </div>
+                          )}
+                          {isNew && (
+                            <div className="absolute top-2 left-2">
+                              <span className="bg-emerald-500 text-white text-xs font-bold px-2 py-0.5 rounded-full animate-pulse">New</span>
+                            </div>
+                          )}
                         </div>
                         <div className="flex-1 p-4">
                           <div className="flex items-center gap-2 mb-1 flex-wrap">
@@ -2406,7 +2446,9 @@ function DevelopmentsPage({ devs, setDevs, factories, users, currentUser, onView
                           </div>
                           <h3 className="font-semibold text-slate-800 text-base">{dev.title}</h3>
                           {dev.material && <p className="text-xs text-slate-500 mt-0.5">Material: {dev.material}{dev.size ? ` · ${dev.size}` : ""}</p>}
-                          {dev.special_remarks && <p className="text-xs text-slate-500 mt-0.5 line-clamp-1">Remarks: {dev.special_remarks}</p>}
+                          {dev.special_remarks && (
+                            <p className="text-xs text-slate-600 mt-1.5 bg-slate-50 rounded-lg p-2 border border-slate-100">{dev.special_remarks}</p>
+                          )}
                           {latestUpdate && (
                             <div className="mt-2 p-2 bg-purple-50 rounded-lg border border-purple-100">
                               <p className="text-xs text-purple-700 font-medium">Latest update: {latestUpdate.notes?.slice(0, 80)}{latestUpdate.notes?.length > 80 ? "…" : ""}</p>
@@ -2414,7 +2456,7 @@ function DevelopmentsPage({ devs, setDevs, factories, users, currentUser, onView
                           )}
                           <div className="mt-3 flex items-center justify-between">
                             <p className="text-xs text-slate-400">{fmtDate(dev.created_date)}</p>
-                            <Btn variant="purple" size="sm" onClick={() => { markSeen(dev.id, dev.updates?.[0]?.created_date); onView(dev.id); }}>View & Update →</Btn>
+                            <Btn variant="purple" size="sm" onClick={() => { markDevSeen(dev.id); markSeen(dev.id, dev.updates?.[0]?.created_date); onView(dev.id); }}>View & Update →</Btn>
                           </div>
                         </div>
                       </div>
@@ -2618,12 +2660,15 @@ function DevCard({ dev, onEdit, onDelete, onView, hasNewUpdate }) {
 
 function DevForm({ dev, factories, users, currentUser, onSave, onCancel }) {
   const isEdit = !!dev?.id;
+  const isAdmin = currentUser?.role === "admin";
   const [form, setForm] = useState(dev || {
     title: "", department: "", client_name: "", buyer_name: "", mail_subject: "",
     factory_ids: [], factory_names: [],
     team_member_name: currentUser?.full_name || "", team_member_id: currentUser?.id || "",
+    assigned_user_id: "", assigned_user_name: "",
     material: "", size: "", weight: "",
     internal_estimated_date: "", internal_estimated_price: "",
+    internal_notes: "",
     special_remarks: "", picture_url: "", additional_pictures: [], artwork_files: [], status: "open",
   });
 
@@ -2704,7 +2749,35 @@ function DevForm({ dev, factories, users, currentUser, onSave, onCancel }) {
           <div><Label>Buyer Name</Label><Input value={form.buyer_name || ""} onChange={(e) => set("buyer_name", e.target.value)} placeholder="e.g. Sarah Cohen" /></div>
         </div>
         <div><Label>Mail Subject</Label><Input value={form.mail_subject || ""} onChange={(e) => set("mail_subject", e.target.value)} placeholder="Paste the email subject line here" /></div>
-        <div><Label>Target Price (RMB ¥)</Label><Input type="number" value={form.internal_estimated_price} onChange={(e) => set("internal_estimated_price", e.target.value)} placeholder="0.00" /></div>
+        <div>
+          <Label>Target Price (RMB ¥)</Label>
+          <Input type="number" value={form.internal_estimated_price}
+            onChange={(e) => set("internal_estimated_price", e.target.value)}
+            onBlur={(e) => { const n = parseFloat(e.target.value); if (!isNaN(n)) set("internal_estimated_price", n.toFixed(2)); }}
+            placeholder="0.00" step="0.01" />
+        </div>
+        {isAdmin && users?.length > 0 && (
+          <div>
+            <Label>Assign User In Charge</Label>
+            <select value={form.assigned_user_id || ""} onChange={(e) => {
+              const u = users.find(u => u.id === e.target.value);
+              set("assigned_user_id", e.target.value);
+              set("assigned_user_name", u?.full_name || "");
+            }} className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm text-slate-700 bg-white focus:outline-none focus:ring-2 focus:ring-amber-400">
+              <option value="">— No specific user assigned —</option>
+              {users.filter(u => u.role !== "supplier" && u.role !== "viewer").map(u => (
+                <option key={u.id} value={u.id}>{u.full_name} ({u.role})</option>
+              ))}
+            </select>
+            <p className="text-xs text-slate-400 mt-1">This development will appear in the assigned user's Dev tab</p>
+          </div>
+        )}
+        <div>
+          <Label>Internal Notes / Remarks</Label>
+          <Textarea value={form.internal_notes || ""} onChange={(e) => set("internal_notes", e.target.value)}
+            placeholder="e.g. Similar to order #1234, reference development DEV-005…" rows={3} />
+          <p className="text-xs text-slate-400 mt-1">Not visible to suppliers</p>
+        </div>
       </div>
       <div>
         <Label required>Assign Factories {form.factory_ids.length > 1 && <span className="text-purple-600 font-normal">(will create {form.factory_ids.length} separate developments)</span>}</Label>
@@ -2765,7 +2838,7 @@ function DevForm({ dev, factories, users, currentUser, onSave, onCancel }) {
   );
 }
 
-function DevDetailPage({ devId, devs, setDevs, factories, getFactory, getUser, onBack, currentUser, onReminder, showToast, askConfirm }) {
+function DevDetailPage({ devId, devs, setDevs, factories, getFactory, getUser, onBack, currentUser, onReminder, showToast, askConfirm, users = [] }) {
   const [showEdit, setShowEdit]           = useState(false);
   const [showUpdateForm, setShowUpdateForm] = useState(false);
   const [activeTab, setActiveTab]         = useState("updates");
@@ -2866,7 +2939,7 @@ function DevDetailPage({ devId, devs, setDevs, factories, getFactory, getUser, o
       <div className="max-w-5xl mx-auto px-4 sm:px-6 py-6">
         {showEdit && (
           <div className="mb-6">
-            <DevForm dev={dev} factories={factories} users={[]} currentUser={currentUser} onSave={saveDev} onCancel={() => setShowEdit(false)} />
+            <DevForm dev={dev} factories={factories} users={users} currentUser={currentUser} onSave={saveDev} onCancel={() => setShowEdit(false)} />
           </div>
         )}
         {!showEdit && (
@@ -2930,53 +3003,95 @@ function DevDetailPage({ devId, devs, setDevs, factories, getFactory, getUser, o
                     <div className="flex items-center justify-between">
                       <h4 className="text-sm font-semibold text-slate-700">Factory Updates ({dev.updates?.length || 0})</h4>
                       <div className="flex gap-2">
-                        <Btn variant="ghost" size="sm" onClick={() => {
+                        {!isSupplier && <Btn variant="ghost" size="sm" onClick={() => {
                           const fac = getFactory(dev.factory_ids?.[0]);
                           const wechatId = fac?.wechat_id;
                           if (!wechatId) { showToast("⚠ No WeChat ID set for this factory", "error"); return; }
-                          // Try to open WeChat app directly to this contact
                           window.location.href = `weixin://dl/chat?${wechatId}`;
-                          // Fallback toast with the ID in case deep link doesn't work on desktop
                           setTimeout(() => showToast(`WeChat ID: ${wechatId} — open WeChat and search this ID`, "ok"), 1000);
-                        }}>{Icon.wechat} Remind</Btn>
-                        <Btn variant="purple" size="sm" onClick={() => setShowUpdateForm((s) => !s)}>{Icon.plus} Add Update</Btn>
+                        }}>{Icon.wechat} Remind</Btn>}
+                        {!isSupplier && <Btn variant="purple" size="sm" onClick={() => setShowUpdateForm((s) => !s)}>{Icon.plus} Add Update</Btn>}
+                        {isSupplier && <Btn variant="purple" size="sm" onClick={() => setShowUpdateForm((s) => !s)}>{Icon.plus} Submit Update</Btn>}
                       </div>
                     </div>
                     {showUpdateForm && <FactoryUpdateForm dev={dev} onSave={saveUpdate} onCancel={() => setShowUpdateForm(false)} />}
-                    {(!dev.updates || dev.updates.length === 0)
-                      ? <p className="text-center text-slate-400 text-sm py-8">No factory updates yet.</p>
-                      : dev.updates.map((u) => <UpdateCard key={u.id} update={u} />)
-                    }
+                    {/* Supplier confirmation — shown only if supplier hasn't confirmed yet */}
+                    {isSupplier && !dev.supplier_confirmed && !dev.updates?.length && (
+                      <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-5 text-center space-y-3">
+                        <div className="w-12 h-12 bg-emerald-100 rounded-full flex items-center justify-center mx-auto">
+                          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#059669" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                        </div>
+                        <h4 className="font-semibold text-emerald-800 text-base">New Development Received</h4>
+                        <p className="text-sm text-emerald-700">Please confirm you have received this development request and that you will start working on it.</p>
+                        <Btn variant="amber" onClick={async () => {
+                          const confirmEntry = {
+                            status: "supplier_confirmed",
+                            changed_by: currentUser?.full_name || "Supplier",
+                            changed_at: new Date().toISOString(),
+                            label: "Supplier confirmed receipt & started process",
+                          };
+                          const newHistory = [...(dev.status_history || []), confirmEntry];
+                          await db.upsertDev({ ...dev, supplier_confirmed: true, status_history: newHistory, updates: undefined, messages: undefined });
+                          setDevs(p => p.map(d => d.id === devId ? { ...d, supplier_confirmed: true, status_history: newHistory } : d));
+                          showToast("✅ Confirmed! You can now submit updates.");
+                        }} className="mx-auto">
+                          ✅ Confirm Receipt & Start Process
+                        </Btn>
+                      </div>
+                    )}
+                    {isSupplier && dev.supplier_confirmed && !dev.updates?.length && (
+                      <p className="text-center text-slate-400 text-sm py-8">No updates submitted yet. Use "Submit Update" to post progress.</p>
+                    )}
+                    {!isSupplier && (!dev.updates || dev.updates.length === 0) && (
+                      <p className="text-center text-slate-400 text-sm py-8">No factory updates yet.</p>
+                    )}
+                    {dev.updates?.map((u) => <UpdateCard key={u.id} update={u} />)}
                   </div>
                 )}
                 {activeTab === "chat" && <DevChat devId={devId} dev={dev} setDevs={setDevs} currentUser={currentUser} />}
                 {activeTab === "history" && (
                   <div className="p-5 space-y-3">
                     <h4 className="text-sm font-semibold text-slate-700">Status History</h4>
-                    {(!dev.status_history || dev.status_history.length === 0) ? (
-                      <p className="text-center text-slate-400 text-sm py-8">No status changes recorded yet.</p>
-                    ) : (
-                      <div className="relative">
-                        <div className="absolute left-3 top-0 bottom-0 w-0.5 bg-slate-200" />
-                        {[...dev.status_history].reverse().map((h, i) => {
-                          const colors = { open: "bg-blue-100 text-blue-700", in_progress: "bg-amber-100 text-amber-700", completed: "bg-green-100 text-green-700", cancelled: "bg-red-100 text-red-700" };
-                          return (
-                            <div key={i} className="flex items-start gap-3 pl-8 relative pb-4">
-                              <div className="absolute left-1.5 top-1.5 w-3 h-3 rounded-full bg-purple-400 border-2 border-white" />
-                              <div className="flex-1 bg-slate-50 rounded-xl p-3">
-                                <div className="flex items-center justify-between gap-2">
-                                  <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${colors[h.status] || "bg-slate-100 text-slate-600"}`}>
-                                    {DEV_STATUS_LABEL()[h.status] || h.status}
-                                  </span>
-                                  <span className="text-xs text-slate-400 whitespace-nowrap">{fmtDate(h.changed_at)}</span>
-                                </div>
-                                <p className="text-xs text-slate-500 mt-1">by {h.changed_by}</p>
-                              </div>
-                            </div>
-                          );
-                        })}
+                    <div className="relative">
+                      <div className="absolute left-3 top-0 bottom-0 w-0.5 bg-slate-200" />
+                      {/* Step 1: Created */}
+                      <div className="flex items-start gap-3 pl-8 relative pb-4">
+                        <div className="absolute left-1.5 top-1.5 w-3 h-3 rounded-full bg-blue-400 border-2 border-white" />
+                        <div className="flex-1 bg-blue-50 rounded-xl p-3 border border-blue-100">
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-blue-100 text-blue-700">Development Created</span>
+                            <span className="text-xs text-slate-400 whitespace-nowrap">{fmtDate(dev.created_date)}</span>
+                          </div>
+                          <p className="text-xs text-slate-500 mt-1">by {dev.team_member_name || "Unknown"}</p>
+                        </div>
                       </div>
-                    )}
+                      {/* Remaining history entries */}
+                      {[...(dev.status_history || [])].map((h, i) => {
+                        const colors = {
+                          open: "bg-blue-100 text-blue-700",
+                          in_progress: "bg-amber-100 text-amber-700",
+                          completed: "bg-green-100 text-green-700",
+                          cancelled: "bg-red-100 text-red-700",
+                          supplier_confirmed: "bg-emerald-100 text-emerald-700",
+                        };
+                        const label = h.label || DEV_STATUS_LABEL()[h.status] || h.status;
+                        const dotColor = h.status === "supplier_confirmed" ? "bg-emerald-400" : "bg-purple-400";
+                        return (
+                          <div key={i} className="flex items-start gap-3 pl-8 relative pb-4">
+                            <div className={`absolute left-1.5 top-1.5 w-3 h-3 rounded-full ${dotColor} border-2 border-white`} />
+                            <div className="flex-1 bg-slate-50 rounded-xl p-3">
+                              <div className="flex items-center justify-between gap-2">
+                                <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${colors[h.status] || "bg-slate-100 text-slate-600"}`}>
+                                  {label}
+                                </span>
+                                <span className="text-xs text-slate-400 whitespace-nowrap">{fmtDate(h.changed_at)}</span>
+                              </div>
+                              <p className="text-xs text-slate-500 mt-1">by {h.changed_by}</p>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
                   </div>
                 )}
               </Card>
@@ -2995,7 +3110,7 @@ function DevDetailPage({ devId, devs, setDevs, factories, getFactory, getUser, o
                   ))}
                 </div>
               </Card>
-              {!isSupplier && (dev.internal_estimated_date || dev.internal_estimated_price) && (
+              {!isSupplier && (dev.internal_estimated_date || dev.internal_estimated_price || dev.internal_notes || dev.assigned_user_name) && (
                 <Card className="shadow-sm p-5 border-l-4 border-l-amber-400">
                   <h3 className="font-semibold text-amber-800 border-b border-amber-100 pb-2 mb-3 text-sm uppercase tracking-wide">🔒 Internal Info</h3>
                   <div className="space-y-3">
@@ -3005,29 +3120,45 @@ function DevDetailPage({ devId, devs, setDevs, factories, getFactory, getUser, o
                     )}
                     {dev.internal_estimated_price && (
                       <div><label className="text-xs text-amber-700 uppercase tracking-wide font-medium">Target Price</label>
-                        <p className="text-sm text-amber-900 mt-0.5">¥{dev.internal_estimated_price}</p></div>
+                        <p className="text-sm text-amber-900 mt-0.5">¥{parseFloat(dev.internal_estimated_price).toFixed(2)}</p></div>
+                    )}
+                    {dev.assigned_user_name && (
+                      <div><label className="text-xs text-amber-700 uppercase tracking-wide font-medium">User In Charge</label>
+                        <p className="text-sm text-amber-900 mt-0.5">{dev.assigned_user_name}</p></div>
+                    )}
+                    {dev.internal_notes && (
+                      <div><label className="text-xs text-amber-700 uppercase tracking-wide font-medium">Internal Notes</label>
+                        <p className="text-sm text-amber-900 mt-0.5 whitespace-pre-wrap">{dev.internal_notes}</p></div>
                     )}
                   </div>
                 </Card>
               )}
               {isSupplier ? (
-                <Card className="shadow-sm p-5">
-                  <h3 className="font-semibold text-slate-800 border-b border-slate-100 pb-2 mb-3 text-sm uppercase tracking-wide">Seller Contact</h3>
-                  {(() => {
-                    const seller = getUser(dev.team_member_id);
-                    return seller ? (
-                      <div className="flex items-start gap-3 py-2">
-                        <div className="w-9 h-9 rounded-xl bg-blue-100 flex items-center justify-center text-blue-600 flex-shrink-0">{Icon.user}</div>
-                        <div>
-                          <p className="font-medium text-slate-800 text-sm">{seller.full_name}</p>
-                          {seller.email && <p className="text-xs text-slate-500 flex items-center gap-1 mt-0.5">{Icon.mail} {seller.email}</p>}
-                          {seller.wechat_id ? <p className="text-xs text-green-600 font-mono mt-0.5 flex items-center gap-1">{Icon.wechat} {seller.wechat_id}</p>
-                            : <p className="text-xs text-red-400 mt-0.5">⚠ No WeChat ID</p>}
+                <>
+                  {dev.special_remarks && (
+                    <Card className="shadow-sm p-5 border-l-4 border-l-purple-400">
+                      <h3 className="font-semibold text-purple-800 border-b border-purple-100 pb-2 mb-3 text-sm uppercase tracking-wide">📋 Special Remarks</h3>
+                      <p className="text-sm text-slate-700 whitespace-pre-wrap">{dev.special_remarks}</p>
+                    </Card>
+                  )}
+                  <Card className="shadow-sm p-5">
+                    <h3 className="font-semibold text-slate-800 border-b border-slate-100 pb-2 mb-3 text-sm uppercase tracking-wide">Seller Contact</h3>
+                    {(() => {
+                      const seller = getUser(dev.team_member_id);
+                      return seller ? (
+                        <div className="flex items-start gap-3 py-2">
+                          <div className="w-9 h-9 rounded-xl bg-blue-100 flex items-center justify-center text-blue-600 flex-shrink-0">{Icon.user}</div>
+                          <div>
+                            <p className="font-medium text-slate-800 text-sm">{seller.full_name}</p>
+                            {seller.email && <p className="text-xs text-slate-500 flex items-center gap-1 mt-0.5">{Icon.mail} {seller.email}</p>}
+                            {seller.wechat_id ? <p className="text-xs text-green-600 font-mono mt-0.5 flex items-center gap-1">{Icon.wechat} {seller.wechat_id}</p>
+                              : <p className="text-xs text-red-400 mt-0.5">⚠ No WeChat ID</p>}
+                          </div>
                         </div>
-                      </div>
-                    ) : <p className="text-xs text-slate-400">No seller assigned</p>;
-                  })()}
-                </Card>
+                      ) : <p className="text-xs text-slate-400">No seller assigned</p>;
+                    })()}
+                  </Card>
+                </>
               ) : (
                 <Card className="shadow-sm p-5">
                   <h3 className="font-semibold text-slate-800 border-b border-slate-100 pb-2 mb-3 text-sm uppercase tracking-wide">Factory Contacts</h3>
