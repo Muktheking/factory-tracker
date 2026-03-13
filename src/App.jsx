@@ -538,18 +538,27 @@ function LoginScreen({ onLogin }) {
   async function handleLogin(e) {
     e.preventDefault();
     setError(""); setLoading(true);
+    // Check status BEFORE attempting auth login to avoid session race condition
+    const { data: userRow } = await supabase.from("users").select("status").eq("email", email).maybeSingle();
+    if (!userRow) {
+      setLoading(false);
+      setError(loginLang === "zh" ? "此账户不存在或已被停用。" : "This account does not exist or has been disabled.");
+      return;
+    }
+    if (userRow.status === "pending") {
+      setLoading(false);
+      setError(loginLang === "zh" ? "您的账户正在等待管理员审批，请稍后再试。" : "Your account is pending admin approval. Please try again later.");
+      return;
+    }
+    if (userRow.status === "blocked") {
+      setLoading(false);
+      setError(loginLang === "zh" ? "此账户已被停用，请联系管理员。" : "This account has been disabled. Please contact your admin.");
+      return;
+    }
+    // Status is approved — now actually sign in
     const { data, error: err } = await supabase.auth.signInWithPassword({ email, password });
     setLoading(false);
     if (err) { setError(err.message); return; }
-    // Require an active user row — blocks deleted and pending users
-    const { data: userRow } = await supabase.from("users").select("status").eq("email", email).maybeSingle();
-    if (!userRow || userRow.status === "pending" || userRow.status === "blocked") {
-      await supabase.auth.signOut();
-      setError(loginLang === "zh"
-        ? (!userRow || userRow.status === "blocked" ? "此账户已被停用，请联系管理员。" : "您的账户正在等待管理员审批，请稍后再试。")
-        : (!userRow || userRow.status === "blocked" ? "This account has been disabled. Please contact your admin." : "Your account is pending admin approval. Please try again later."));
-      return;
-    }
     onLogin(data.session);
   }
 
@@ -980,10 +989,10 @@ export default function App() {
     return () => clearInterval(interval);
   }, [session, currentUser]);
 
-  // Re-validate session every 60s — kicks out blocked/deleted users even if already logged in
+  // Re-validate session every 30s — kicks out blocked/deleted users even if already logged in
   useEffect(() => {
     if (!session) return;
-    const interval = setInterval(async () => {
+    async function validateSession() {
       const email = session?.user?.email;
       if (!email) return;
       const { data: userRow } = await supabase.from("users").select("status").eq("email", email).maybeSingle();
@@ -991,7 +1000,9 @@ export default function App() {
         await supabase.auth.signOut();
         setSession(null);
       }
-    }, 60000);
+    }
+    validateSession(); // run immediately
+    const interval = setInterval(validateSession, 30000);
     return () => clearInterval(interval);
   }, [session]);
 
@@ -3189,6 +3200,22 @@ function UsersPage({ users, setUsers, factories, currentUser, showToast, askConf
     showToast(`✓ ${u.full_name} unblocked — they can now log in again.`);
   }
 
+  async function permanentlyDeleteUser(u) {
+    if (u.id === currentUser?.id) { showToast("⚠ Cannot delete yourself", "error"); return; }
+    askConfirm(`Permanently delete ${u.full_name}? This removes them from the app and Supabase Auth completely.`, async () => {
+      const { error } = await supabase.rpc("delete_user_completely", { user_email: u.email });
+      if (error) {
+        // Fallback: at least block them in the app
+        await db.deleteUser(u.id);
+        setUsers(p => p.map(x => x.id === u.id ? { ...x, status: "blocked" } : x));
+        showToast("⚠ Could not delete from Auth — user blocked instead. Run the SQL function first.", "error");
+      } else {
+        setUsers(p => p.filter(x => x.id !== u.id));
+        showToast(`✓ ${u.full_name} permanently deleted.`);
+      }
+    });
+  }
+
   async function addUser() {
     if (!newName || !newEmail || !newPassword) { showToast("Please fill all fields", "error"); return; }
     if (newPassword.length < 6) { showToast("Password must be at least 6 characters", "error"); return; }
@@ -3346,6 +3373,7 @@ function UsersPage({ users, setUsers, factories, currentUser, showToast, askConf
                               ? <>
                                   <span className="text-xs px-2 py-0.5 rounded-full bg-red-100 text-red-700 font-medium mr-1">Blocked</span>
                                   <Btn variant="ghost" size="sm" onClick={() => unblockUser(u)} className="text-green-600 hover:text-green-800">✓ Unblock</Btn>
+                                  <Btn variant="ghost" size="sm" onClick={() => permanentlyDeleteUser(u)} className="text-red-600 hover:text-red-800">🗑 Delete</Btn>
                                 </>
                               : <>
                                   <Btn variant="ghost" size="sm" onClick={() => startEdit(u)}>{Icon.edit} {t("edit")}</Btn>
