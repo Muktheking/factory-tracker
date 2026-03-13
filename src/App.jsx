@@ -1712,22 +1712,41 @@ function VisitForm({ visit, factories, currentUser, onSave, onCancel }) {
 
   if (!isEdit && !didGeo.current && typeof navigator !== "undefined" && navigator.geolocation) {
     didGeo.current = true;
-    navigator.geolocation.getCurrentPosition(
+    let bestAccuracy = Infinity;
+    let watchId = null;
+    let settled = false;
+
+    async function applyPosition(pos) {
+      const { latitude, longitude } = pos.coords;
+      try {
+        const res = await fetch(`https://restapi.amap.com/v3/geocode/regeo?key=a3fa54b4926b09660455bbb6c286c12a&location=${longitude},${latitude}&radius=50&extensions=base&batch=false`);
+        const data = await res.json();
+        const address = data.regeocode?.formatted_address || `${latitude.toFixed(6)}, ${longitude.toFixed(6)}`;
+        setForm((p) => ({ ...p, latitude, longitude, location_address: address }));
+      } catch {
+        setForm((p) => ({ ...p, latitude, longitude, location_address: `${latitude.toFixed(6)}, ${longitude.toFixed(6)}` }));
+      }
+      setLocating(false);
+    }
+
+    // Watch position — accept updates as accuracy improves, stop after 10s or accuracy < 20m
+    watchId = navigator.geolocation.watchPosition(
       async (pos) => {
-        const { latitude, longitude } = pos.coords;
-        try {
-          const res = await fetch(`https://restapi.amap.com/v3/geocode/regeo?key=a3fa54b4926b09660455bbb6c286c12a&location=${longitude},${latitude}&radius=100&extensions=base&batch=false`);
-          const data = await res.json();
-          const address = data.regeocode?.formatted_address || `${latitude.toFixed(5)}, ${longitude.toFixed(5)}`;
-          setForm((p) => ({ ...p, latitude, longitude, location_address: address }));
-        } catch {
-          setForm((p) => ({ ...p, latitude, longitude, location_address: `${latitude.toFixed(5)}, ${longitude.toFixed(5)}` }));
+        const acc = pos.coords.accuracy;
+        if (acc < bestAccuracy) {
+          bestAccuracy = acc;
+          await applyPosition(pos);
+          if (acc <= 20 && !settled) { // Good enough — stop watching
+            settled = true;
+            navigator.geolocation.clearWatch(watchId);
+          }
         }
-        setLocating(false);
       },
       () => { setLocating(false); setLocError("GPS unavailable"); },
-      { timeout: 12000, enableHighAccuracy: true }
+      { timeout: 15000, enableHighAccuracy: true, maximumAge: 0 }
     );
+    // Always stop watching after 10s and keep best result so far
+    setTimeout(() => { if (!settled) { navigator.geolocation.clearWatch(watchId); setLocating(false); } }, 10000);
   }
 
   const set = (key, val) => setForm((p) => ({ ...p, [key]: val }));
@@ -1776,13 +1795,13 @@ function VisitForm({ visit, factories, currentUser, onSave, onCancel }) {
         <Label>Location</Label>
         {locating ? (
           <div className="flex items-center gap-3 h-12 px-4 bg-amber-50 border border-amber-200 rounded-xl text-sm text-amber-700">
-            <span className="animate-spin text-base">⏳</span><span>Detecting location…</span>
+            <span className="animate-spin text-base">⏳</span><span>Getting precise location… (up to 10s)</span>
           </div>
         ) : form.latitude && form.longitude ? (
           <div className="flex items-start gap-3 px-4 py-3 bg-green-50 border border-green-200 rounded-xl text-sm text-green-800">
             <span className="flex-shrink-0 mt-0.5 text-green-500">{Icon.pin}</span>
             <span className="flex-1 leading-relaxed">{form.location_address}</span>
-            <span className="ml-auto text-xs text-green-600 bg-green-100 px-2 py-0.5 rounded-md">GPS ✓</span>
+            <span className="ml-auto text-xs text-green-600 bg-green-100 px-2 py-0.5 rounded-md whitespace-nowrap">GPS ✓</span>
           </div>
         ) : (
           <div className="flex items-center gap-3 h-12 px-4 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-400">
