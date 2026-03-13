@@ -558,14 +558,16 @@ function LoginScreen({ onLogin }) {
     if (!name.trim()) { setError("Please enter your full name."); return; }
     setError(""); setLoading(true);
     const { data, error: err } = await supabase.auth.signUp({ email, password, options: { data: { full_name: name } } });
-    setLoading(false);
-    if (err) { setError(err.message); return; }
+    if (err) { setLoading(false); setError(err.message); return; }
     if (data?.user) {
+      // Insert as pending FIRST, then immediately sign out so they cannot access the app
       await supabase.from("users").upsert({
         id: "U-" + data.user.id.slice(0, 8).toUpperCase(),
         full_name: name, email, role: "user", status: "pending",
       });
+      await supabase.auth.signOut();
     }
+    setLoading(false);
     setInfo(loginLang === "zh"
       ? "账户申请已提交！请等待管理员审批后方可登录。"
       : "Account request submitted! Please wait for admin approval before logging in.");
