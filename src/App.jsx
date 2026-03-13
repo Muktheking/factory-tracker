@@ -1239,7 +1239,6 @@ export default function App() {
       .on("postgres_changes", { event: "UPDATE", schema: "public", table: "visits" }, () => {
         db.getVisits().then(setVisits);
       })
-      // *** KEY: Listen for new notifications addressed to THIS user ***
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "notifications" }, (payload) => {
         const cu = currentUserRef.current;
         if (!cu) return;
@@ -1247,18 +1246,28 @@ export default function App() {
           setNotifications(prev => [payload.new, ...prev].slice(0, 50));
         }
       })
-      .subscribe();
+      .subscribe((status) => {
+        console.log("Realtime status:", status);
+      });
     return () => supabase.removeChannel(ch);
   }, [session, loading, dbError]);
 
-  // 4. Simple data refresh every 20s — notifications handled by DB + Realtime
+  // 4. Simple data refresh every 20s + notification poll every 10s as Realtime fallback
   useEffect(() => {
     if (!session || !currentUser) return;
-    const interval = setInterval(() => {
+    const dataInterval = setInterval(() => {
       db.getDevs().then(setDevs);
       db.getVisits().then(setVisits);
     }, 20000);
-    return () => clearInterval(interval);
+    // Poll notifications every 10s — guarantees delivery even if Realtime is not working
+    const notifInterval = setInterval(() => {
+      const cu = currentUserRef.current;
+      if (!cu) return;
+      db.getNotifs(cu.id).then(rows => {
+        if (rows.length > 0) setNotifications(rows);
+      });
+    }, 10000);
+    return () => { clearInterval(dataInterval); clearInterval(notifInterval); };
   }, [session, currentUser?.id]);
 
   // Re-validate every 20s — force reload if blocked/deleted so there's no stale state
