@@ -2633,7 +2633,15 @@ function DevDetailPage({ devId, devs, setDevs, factories, getFactory, getUser, o
                     <div className="flex items-center justify-between">
                       <h4 className="text-sm font-semibold text-slate-700">Factory Updates ({dev.updates?.length || 0})</h4>
                       <div className="flex gap-2">
-                        <Btn variant="ghost" size="sm" onClick={onReminder}>{Icon.wechat} Remind</Btn>
+                        <Btn variant="ghost" size="sm" onClick={() => {
+                          const fac = getFactory(dev.factory_ids?.[0]);
+                          const wechatId = fac?.wechat_id;
+                          if (!wechatId) { showToast("⚠ No WeChat ID set for this factory", "error"); return; }
+                          // Try to open WeChat app directly to this contact
+                          window.location.href = `weixin://dl/chat?${wechatId}`;
+                          // Fallback toast with the ID in case deep link doesn't work on desktop
+                          setTimeout(() => showToast(`WeChat ID: ${wechatId} — open WeChat and search this ID`, "ok"), 1000);
+                        }}>{Icon.wechat} Remind</Btn>
                         <Btn variant="purple" size="sm" onClick={() => setShowUpdateForm((s) => !s)}>{Icon.plus} Add Update</Btn>
                       </div>
                     </div>
