@@ -1100,6 +1100,9 @@ export default function App() {
     if (k === "newDevSupplier") return globalLang === "zh"
       ? `新开发任务: "${n.msgData.title || ""}"`
       : `New development assigned to you: "${n.msgData.title || ""}"`;
+    if (k === "supplierConfirmed") return globalLang === "zh"
+      ? `供应商已确认接收 "${n.msgData.title || ""}"`
+      : `${n.msgData.factory || "Supplier"} confirmed receipt of "${n.msgData.title || ""}"`;
     if (k === "newMsgCount") return globalLang === "zh"
       ? `${n.msgData.count} 条新消息`
       : `${n.msgData.count} new message${n.msgData.count > 1 ? "s" : ""}`;
@@ -1182,14 +1185,34 @@ export default function App() {
         if (!cu) return;
         if (payload.eventType === "INSERT") {
           const newDev = payload.new;
-          if (newDev?.team_member_name !== cu?.full_name) {
-            if (cu.role === "admin") {
-              addNotification("newDev", {title: newDev?.title || "", team: newDev?.team_member_name || ""}, newDev?.id, "dev");
-            }
+          // Notify admin of all new devs
+          if (cu.role === "admin") {
+            addNotification("newDev", {title: newDev?.title || "", team: newDev?.team_member_name || ""}, newDev?.id, "dev");
           }
           // Notify supplier if this dev is assigned to their factory
-          if (cu.role === "supplier" && newDev?.factory_ids?.includes(cu.factory_id)) {
-            addNotification("newDevSupplier", {title: newDev?.title || ""}, newDev?.id, "dev");
+          if (cu.role === "supplier") {
+            const factoryIds = Array.isArray(newDev?.factory_ids) ? newDev.factory_ids : JSON.parse(newDev?.factory_ids || "[]");
+            if (factoryIds.includes(cu.factory_id)) {
+              addNotification("newDevSupplier", {title: newDev?.title || ""}, newDev?.id, "dev");
+            }
+          }
+        }
+        // Notify admin/team member when supplier confirms (status_history updated)
+        if (payload.eventType === "UPDATE" && cu.role !== "supplier") {
+          const newHistory = payload.new?.status_history || [];
+          const oldHistory = payload.old?.status_history || [];
+          const newConfirm = Array.isArray(newHistory) ? newHistory : [];
+          const oldConfirm = Array.isArray(oldHistory) ? oldHistory : [];
+          const justConfirmed = newConfirm.some(h => h.status === "supplier_confirmed") &&
+            !oldConfirm.some(h => h.status === "supplier_confirmed");
+          if (justConfirmed) {
+            const isInvolved = cu.role === "admin" || payload.new?.team_member_id === cu.id || payload.new?.assigned_user_id === cu.id;
+            if (isInvolved) {
+              addNotification("supplierConfirmed", {
+                title: payload.new?.title || "",
+                factory: payload.new?.factory_names?.[0] || "Supplier",
+              }, payload.new?.id, "dev");
+            }
           }
         }
       })
@@ -1201,14 +1224,16 @@ export default function App() {
           const upd = payload.new;
           const relatedDev = newDevs.find(d => d.id === upd?.development_id);
           if (!relatedDev) return;
-          // Notify admin and the dev's team member (but not the person who submitted)
-          const submitterFactory = upd.factory_name || upd.factory_id;
-          const isInvolved = cu.role === "admin" || relatedDev.team_member_id === cu.id;
-          if (isInvolved) {
+          const submitterName = upd.factory_name || "Supplier";
+          // Notify admin and the dev's team member + assigned user (but not the submitter)
+          const isInvolved = cu.role === "admin"
+            || relatedDev.team_member_id === cu.id
+            || relatedDev.assigned_user_id === cu.id;
+          if (isInvolved && cu.full_name !== upd.submitted_by) {
             addNotification("devUpdate", {
-              factory: submitterFactory,
+              factory: submitterName,
               title: relatedDev.title || "",
-              notes: upd.notes?.slice(0, 40) || "",
+              notes: upd.notes?.slice(0, 40) || upd.production_status?.slice(0, 40) || "",
             }, relatedDev.id, "dev");
           }
         });
@@ -2889,19 +2914,26 @@ function DevDetailPage({ devId, devs, setDevs, factories, getFactory, getUser, o
 
   async function saveUpdate(data) {
     const { mark_complete, ...updateData } = data;
-    const record = { ...updateData, id: genId("UPD"), development_id: devId, created_date: new Date().toISOString() };
+    const record = { ...updateData, id: genId("UPD"), development_id: devId, created_date: new Date().toISOString(), submitted_by: currentUser?.full_name || "" };
     const saved = await db.insertUpdate(record);
     if (saved) {
+      // Add to status history
+      const historyEntry = {
+        status: mark_complete ? "completed" : "update_submitted",
+        changed_by: currentUser?.full_name || "Supplier",
+        changed_at: new Date().toISOString(),
+        label: mark_complete ? "Supplier submitted final update & marked complete" : `Supplier submitted update${data.notes ? `: ${data.notes.slice(0, 60)}` : ""}`,
+      };
+      const newHistory = [...(dev.status_history || []), historyEntry];
       if (mark_complete) {
-        const historyEntry = { status: "completed", changed_by: currentUser?.full_name || "Unknown", changed_at: new Date().toISOString() };
-        const newHistory = [...(dev.status_history || []), historyEntry];
         await db.upsertDev({ ...dev, status: "completed", status_history: newHistory, updates: undefined, messages: undefined });
         setDevs((p) => p.map((d) => d.id === devId
           ? { ...d, status: "completed", status_history: newHistory, updates: [saved, ...(d.updates || [])] }
           : d));
         showToast("✅ Development marked as completed!");
       } else {
-        setDevs((p) => p.map((d) => d.id === devId ? { ...d, updates: [saved, ...(d.updates || [])] } : d));
+        await db.upsertDev({ ...dev, status_history: newHistory, updates: undefined, messages: undefined });
+        setDevs((p) => p.map((d) => d.id === devId ? { ...d, status_history: newHistory, updates: [saved, ...(d.updates || [])] } : d));
         showToast("Update submitted");
       }
     }
@@ -3098,9 +3130,10 @@ function DevDetailPage({ devId, devs, setDevs, factories, getFactory, getUser, o
                           completed: "bg-green-100 text-green-700",
                           cancelled: "bg-red-100 text-red-700",
                           supplier_confirmed: "bg-emerald-100 text-emerald-700",
+                          update_submitted: "bg-purple-100 text-purple-700",
                         };
+                        const dotColor = h.status === "supplier_confirmed" ? "bg-emerald-400" : h.status === "update_submitted" ? "bg-purple-400" : "bg-slate-400";
                         const label = h.label || DEV_STATUS_LABEL()[h.status] || h.status;
-                        const dotColor = h.status === "supplier_confirmed" ? "bg-emerald-400" : "bg-purple-400";
                         return (
                           <div key={i} className="flex items-start gap-3 pl-8 relative pb-4">
                             <div className={`absolute left-1.5 top-1.5 w-3 h-3 rounded-full ${dotColor} border-2 border-white`} />
@@ -3241,19 +3274,13 @@ function FactoryUpdateForm({ dev, onSave, onCancel }) {
     <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-3">
       <h4 className="text-sm font-semibold text-slate-700">Submit Factory Update</h4>
       <div className="grid grid-cols-2 gap-3">
-        <div><Label>Update Type</Label>
-          <Select value={form.type} onChange={(v) => set("type", v)}>
-            <option value="confirmation">✅ Confirmation</option>
-            <option value="progress">📋 Progress</option>
-          </Select>
-        </div>
         <div><Label>Materials Status</Label>
           <Select value={form.materials_status} onChange={(v) => set("materials_status", v)}>
             {Object.entries(MAT_LABEL).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
           </Select>
         </div>
-        <div><Label>Materials Arrival</Label><Input type="date" value={form.materials_arrival_date} onChange={(e) => set("materials_arrival_date", e.target.value)} /></div>
         <div><Label>Est. Finish Date</Label><Input type="date" value={form.estimated_finish_date} onChange={(e) => set("estimated_finish_date", e.target.value)} /></div>
+        <div><Label>Est. Materials Arrival Date</Label><Input type="date" value={form.materials_arrival_date} onChange={(e) => set("materials_arrival_date", e.target.value)} /></div>
         {isFirstUpdate && <div><Label>{t("supplierPrice")}</Label><Input value={form.supplier_price} onChange={(e) => set("supplier_price", e.target.value)} placeholder="0.00" /></div>}
       </div>
       <div><Label>Production Status</Label><Textarea value={form.production_status} onChange={(e) => set("production_status", e.target.value)} placeholder="Current stage…" rows={2} /></div>
@@ -3301,7 +3328,7 @@ function UpdateCard({ update }) {
       </div>
       <div className="grid grid-cols-2 gap-3 text-sm">
         {update.materials_status && <div><label className="text-xs text-slate-500 uppercase tracking-wide">Materials</label><p className="font-medium text-slate-700">{MAT_LABEL[update.materials_status] || update.materials_status}</p></div>}
-        {update.materials_arrival_date && <div><label className="text-xs text-slate-500 uppercase tracking-wide">Materials Arrival</label><p className="font-medium text-slate-700">{fmtDate(update.materials_arrival_date)}</p></div>}
+        {update.materials_arrival_date && <div><label className="text-xs text-slate-500 uppercase tracking-wide">Est. Materials Arrival</label><p className="font-medium text-slate-700">{fmtDate(update.materials_arrival_date)}</p></div>}
         {update.estimated_finish_date && <div><label className="text-xs text-slate-500 uppercase tracking-wide">Est. Finish</label><p className="font-medium text-slate-700">{fmtDate(update.estimated_finish_date)}</p></div>}
         {update.supplier_price && <div><label className="text-xs text-slate-500 uppercase tracking-wide">Price</label><p className="font-medium text-slate-700">¥{update.supplier_price}</p></div>}
       </div>
