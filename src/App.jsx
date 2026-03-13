@@ -1588,8 +1588,8 @@ function VisitCard({ visit, onEdit, onDelete, onView, currentUser }) {
   return (
     <Card className="shadow-sm hover:shadow-lg transition-all overflow-hidden">
       <div className="flex">
-        <div className="w-28 flex-shrink-0 bg-gradient-to-br from-slate-100 to-slate-200 flex items-center justify-center text-slate-400 overflow-hidden">
-          {visit.picture_url ? <img src={visit.picture_url} alt="" className="w-full h-full object-cover" /> : <div className="flex flex-col items-center gap-1 text-slate-300">
+        <div className="w-36 sm:w-44 flex-shrink-0 self-stretch bg-gradient-to-br from-slate-100 to-slate-200 flex items-center justify-center text-slate-400 overflow-hidden">
+          {visit.picture_url ? <img src={visit.picture_url} alt="" className="w-full h-full object-contain bg-slate-100" /> : <div className="flex flex-col items-center gap-1 text-slate-300">
                   <svg width="24" height="24" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.2}><rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline strokeLinecap="round" strokeLinejoin="round" points="21 15 16 10 5 21"/></svg>
                   <span className="text-xs">No photo</span>
                 </div>}
@@ -2176,8 +2176,8 @@ function DevCard({ dev, onEdit, onDelete, onView }) {
   return (
     <Card className={`shadow-sm hover:shadow-lg transition-all overflow-hidden ${needsFollowUp ? "border-l-4 border-l-orange-400" : ""}`}>
       <div className="flex">
-        <div className="w-24 sm:w-32 flex-shrink-0 min-h-[110px] bg-gradient-to-br from-slate-100 to-slate-200 flex items-center justify-center text-slate-400">
-          {dev.picture_url ? <img src={dev.picture_url} alt={dev.title} className="w-full h-full object-cover" /> : <div className="flex flex-col items-center gap-1 text-slate-300">
+        <div className="w-40 sm:w-52 flex-shrink-0 self-stretch bg-gradient-to-br from-slate-100 to-slate-200 flex items-center justify-center text-slate-400">
+          {dev.picture_url ? <img src={dev.picture_url} alt={dev.title} className="w-full h-full object-contain bg-slate-100" /> : <div className="flex flex-col items-center gap-1 text-slate-300">
                   <svg width="24" height="24" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.2}><rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline strokeLinecap="round" strokeLinejoin="round" points="21 15 16 10 5 21"/></svg>
                   <span className="text-xs">No photo</span>
                 </div>}
