@@ -2232,6 +2232,14 @@ function DevCard({ dev, onEdit, onDelete, onView, hasNewUpdate }) {
                   <svg width="24" height="24" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.2}><rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline strokeLinecap="round" strokeLinejoin="round" points="21 15 16 10 5 21"/></svg>
                   <span className="text-xs">No photo</span>
                 </div>}
+          {hasNewUpdate && (
+            <div className="absolute bottom-0 left-0 right-0 flex justify-center pb-2">
+              <div className="bg-emerald-500 text-white text-xs font-bold px-3 py-1.5 rounded-full shadow-lg flex items-center gap-1.5 animate-pulse">
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                New Update
+              </div>
+            </div>
+          )}
         </div>
         <div className="flex-1 p-4">
           <div className="flex items-center gap-2 mb-1 flex-wrap">
@@ -2271,20 +2279,10 @@ function DevCard({ dev, onEdit, onDelete, onView, hasNewUpdate }) {
               )}
             </div>
           )}
-          <div className="mt-2 flex flex-col gap-1">
-            {hasNewUpdate && (
-              <div className="flex justify-center pb-1">
-                <div className="bg-emerald-500 text-white text-xs font-bold px-4 py-1.5 rounded-full shadow-md flex items-center gap-1.5 animate-pulse">
-                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
-                  New Update
-                </div>
-              </div>
-            )}
-            <div className="flex justify-end gap-1">
-              {onEdit   && <Btn variant="ghost" size="sm" onClick={(e) => { e.stopPropagation(); onEdit(dev);    }}>{Icon.edit}</Btn>}
-              {onDelete && <Btn variant="ghost" size="sm" onClick={(e) => { e.stopPropagation(); onDelete(dev.id); }}>{Icon.trash}</Btn>}
-              <Btn variant="ghost" size="sm" onClick={onView}>{Icon.eye} {t("view")}</Btn>
-            </div>
+          <div className="mt-2 flex justify-end gap-1">
+            {onEdit   && <Btn variant="ghost" size="sm" onClick={(e) => { e.stopPropagation(); onEdit(dev);    }}>{Icon.edit}</Btn>}
+            {onDelete && <Btn variant="ghost" size="sm" onClick={(e) => { e.stopPropagation(); onDelete(dev.id); }}>{Icon.trash}</Btn>}
+            <Btn variant="ghost" size="sm" onClick={onView}>{Icon.eye} {t("view")}</Btn>
           </div>
         </div>
       </div>
