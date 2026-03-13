@@ -2207,8 +2207,8 @@ function DevCard({ dev, onEdit, onDelete, onView, hasNewUpdate }) {
     ? Math.round((new Date(completedDate) - new Date(dev.created_date)) / 86400000)
     : isCompleted ? activeDays : null;
 
-  // Get the latest factory estimated finish date from updates
-  const latestEstFinish = dev.updates?.slice().reverse().find(u => u.estimated_finish_date)?.estimated_finish_date || null;
+  // Get the latest factory estimated finish date from updates (updates[0] is newest)
+  const latestEstFinish = dev.updates?.find(u => u.estimated_finish_date)?.estimated_finish_date || null;
   const targetDate = dev.internal_estimated_date || null;
 
   // Is target date overdue?
@@ -2222,14 +2222,6 @@ function DevCard({ dev, onEdit, onDelete, onView, hasNewUpdate }) {
                   <svg width="24" height="24" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.2}><rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline strokeLinecap="round" strokeLinejoin="round" points="21 15 16 10 5 21"/></svg>
                   <span className="text-xs">No photo</span>
                 </div>}
-          {hasNewUpdate && (
-            <div className="absolute inset-0 flex items-center justify-center">
-              <div className="bg-emerald-500 text-white text-xs font-bold px-3 py-1.5 rounded-full shadow-lg flex items-center gap-1.5 animate-pulse">
-                <svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="10"/><path fill="white" d="M9 12l2 2 4-4" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" fill="none"/></svg>
-                New Update
-              </div>
-            </div>
-          )}
         </div>
         <div className="flex-1 p-4">
           <div className="flex items-center gap-2 mb-1 flex-wrap">
@@ -2270,6 +2262,12 @@ function DevCard({ dev, onEdit, onDelete, onView, hasNewUpdate }) {
             </div>
           )}
           <div className="mt-2 flex justify-end gap-1">
+            {hasNewUpdate && (
+              <span className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-700 text-xs font-semibold border border-emerald-200 mr-auto">
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                New Update
+              </span>
+            )}
             {onEdit   && <Btn variant="ghost" size="sm" onClick={(e) => { e.stopPropagation(); onEdit(dev);    }}>{Icon.edit}</Btn>}
             {onDelete && <Btn variant="ghost" size="sm" onClick={(e) => { e.stopPropagation(); onDelete(dev.id); }}>{Icon.trash}</Btn>}
             <Btn variant="ghost" size="sm" onClick={onView}>{Icon.eye} {t("view")}</Btn>
@@ -2454,11 +2452,24 @@ function DevDetailPage({ devId, devs, setDevs, factories, getFactory, getUser, o
   }
 
   async function saveUpdate(data) {
-    const record = { ...data, id: genId("UPD"), development_id: devId, created_date: new Date().toISOString() };
+    const { mark_complete, ...updateData } = data;
+    const record = { ...updateData, id: genId("UPD"), development_id: devId, created_date: new Date().toISOString() };
     const saved = await db.insertUpdate(record);
-    if (saved) setDevs((p) => p.map((d) => d.id === devId ? { ...d, updates: [saved, ...(d.updates || [])] } : d));
+    if (saved) {
+      if (mark_complete) {
+        const historyEntry = { status: "completed", changed_by: currentUser?.full_name || "Unknown", changed_at: new Date().toISOString() };
+        const newHistory = [...(dev.status_history || []), historyEntry];
+        await db.upsertDev({ ...dev, status: "completed", status_history: newHistory, updates: undefined, messages: undefined });
+        setDevs((p) => p.map((d) => d.id === devId
+          ? { ...d, status: "completed", status_history: newHistory, updates: [saved, ...(d.updates || [])] }
+          : d));
+        showToast("✅ Development marked as completed!");
+      } else {
+        setDevs((p) => p.map((d) => d.id === devId ? { ...d, updates: [saved, ...(d.updates || [])] } : d));
+        showToast("Update submitted");
+      }
+    }
     setShowUpdateForm(false);
-    showToast("Update submitted");
   }
 
   async function saveDev(data) {
@@ -2756,6 +2767,11 @@ function FactoryUpdateForm({ dev, onSave, onCancel }) {
       <div className="flex justify-end gap-2">
         <Btn variant="outline" size="sm" onClick={onCancel}>Cancel</Btn>
         <Btn variant="purple" size="sm" onClick={() => onSave(form)}>{Icon.check} Submit Update</Btn>
+        <Btn variant="ghost" size="sm"
+          className="bg-green-50 text-green-700 border border-green-200 hover:bg-green-100"
+          onClick={() => onSave({ ...form, mark_complete: true })}>
+          ✅ Submit & Mark Complete
+        </Btn>
       </div>
     </div>
   );
