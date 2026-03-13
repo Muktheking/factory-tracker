@@ -727,24 +727,25 @@ function SlideshowViewer({ visits, devs, onSignOut }) {
             <div className="grid grid-cols-4 gap-4 h-full">
               {recentVisits.map((v, i) => {
                 const photo = v.picture_url || v.additional_pictures?.[0];
+                const isActive = i === (seqIdx - 1) / 2;
                 return (
-                  <div key={v.id} className={`rounded-2xl overflow-hidden bg-slate-800 flex flex-col border transition-all ${i === (seqIdx - 1) / 2 ? "border-amber-400 ring-2 ring-amber-400 scale-105 shadow-xl shadow-amber-900/40" : "border-white/5"}`}>
-                    <div className="h-32 bg-slate-700 flex-shrink-0 overflow-hidden relative">
+                  <div key={v.id} className={`rounded-2xl overflow-hidden bg-slate-800 flex flex-col border transition-all duration-500 ${isActive ? "border-amber-400 ring-2 ring-amber-400 shadow-xl shadow-amber-900/40" : "border-white/5 opacity-60 scale-95"}`}>
+                    <div className="h-36 bg-slate-700 flex-shrink-0 overflow-hidden relative">
                       {photo
                         ? <img src={photo} alt="" className="w-full h-full object-cover" />
                         : <div className="w-full h-full flex items-center justify-center text-slate-600">
                             <svg width="32" height="32" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1}><rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
                           </div>
                       }
-                      {i === (seqIdx - 1) / 2 && (
+                      {isActive && (
                         <div className="absolute top-2 right-2 bg-amber-400 text-black text-xs font-bold px-2 py-0.5 rounded-full">NOW</div>
                       )}
                     </div>
-                    <div className="p-3 flex-1">
-                      <p className="text-white font-bold text-sm leading-tight truncate">{v.factory_name}</p>
-                      <p className="text-amber-400 text-xs truncate mt-0.5">{v.item}</p>
-                      {v.visitor_name && <p className="text-white/50 text-xs mt-1 flex items-center gap-1">👤 {v.visitor_name}</p>}
-                      <p className="text-white/30 text-xs mt-1">{fmtDate(v.visit_date, true)}</p>
+                    <div className="p-3 flex-1 flex flex-col items-center justify-center text-center gap-1">
+                      <p className="text-white font-bold text-base leading-tight">{v.factory_name}</p>
+                      <p className="text-amber-400 text-sm">{v.item}</p>
+                      {v.visitor_name && <p className="text-white/80 text-sm flex items-center gap-1">👤 {v.visitor_name}</p>}
+                      <p className="text-white/40 text-xs">{fmtDate(v.visit_date, true)}</p>
                     </div>
                   </div>
                 );
