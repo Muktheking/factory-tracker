@@ -345,10 +345,10 @@ const db = {
 // Constants
 // ─────────────────────────────────────────────────────────────────────────────
 const DEV_STATUS_CSS = {
-  open: "bg-blue-100 text-blue-800", in_progress: "bg-amber-100 text-amber-800",
+  pending: "bg-slate-100 text-slate-600", open: "bg-blue-100 text-blue-800", in_progress: "bg-amber-100 text-amber-800",
   completed: "bg-green-100 text-green-800", cancelled: "bg-red-100 text-red-800",
 };
-const DEV_STATUS_LABEL = () => ({ open: t("open"), in_progress: t("inProgress"), completed: t("completed"), cancelled: t("cancelled") });
+const DEV_STATUS_LABEL = () => ({ pending: t("pending") || "Pending", open: t("open"), in_progress: t("inProgress"), completed: t("completed"), cancelled: t("cancelled") });
 const MAT_LABEL = { not_started: "Not Started", sourcing: "Sourcing", ordered: "Ordered", received: "Received", unavailable: "Unavailable" };
 const ROLE_CSS  = { admin: "bg-purple-100 text-purple-700", user: "bg-blue-100 text-blue-700", supplier: "bg-orange-100 text-orange-700", viewer: "bg-teal-100 text-teal-700" };
 
@@ -1103,6 +1103,9 @@ export default function App() {
     if (k === "supplierConfirmed") return globalLang === "zh"
       ? `供应商已确认接收 "${n.msgData.title || ""}"`
       : `${n.msgData.factory || "Supplier"} confirmed receipt of "${n.msgData.title || ""}"`;
+    if (k === "devViewed") return globalLang === "zh"
+      ? `${n.msgData.viewer || "团队成员"}查看了您的开发: "${n.msgData.title || ""}"`
+      : `${n.msgData.viewer || "Team"} viewed your development: "${n.msgData.title || ""}"`;
     if (k === "newMsgCount") return globalLang === "zh"
       ? `${n.msgData.count} 条新消息`
       : `${n.msgData.count} new message${n.msgData.count > 1 ? "s" : ""}`;
@@ -1162,6 +1165,26 @@ export default function App() {
   // Match the logged-in auth user to the users table by email
   const authEmail   = session?.user?.email;
   const currentUser = users.find((u) => u.email?.toLowerCase() === authEmail?.toLowerCase()) || null;
+
+  // On first load: notify supplier of new devs assigned since last seen
+  const startupNotifyDone = useRef(false);
+  useEffect(() => {
+    if (!currentUser || !devs.length || startupNotifyDone.current) return;
+    startupNotifyDone.current = true;
+    if (currentUser.role === "supplier" && currentUser.factory_id) {
+      let seenIds = [];
+      try { seenIds = JSON.parse(localStorage.getItem(`seenDevs_${currentUser.id}`) || "[]"); } catch {}
+      const myNewDevs = devs.filter(d => {
+        const fids = Array.isArray(d.factory_ids) ? d.factory_ids : [];
+        return fids.includes(currentUser.factory_id) && !seenIds.includes(d.id);
+      });
+      if (myNewDevs.length > 0) {
+        setTimeout(() => {
+          myNewDevs.forEach(d => addNotification("newDevSupplier", { title: d.title || "" }, d.id, "dev"));
+        }, 1500); // slight delay so UI is ready
+      }
+    }
+  }, [currentUser?.id, devs.length]);
 
   // Use a ref so realtime handlers always have latest currentUser
   const currentUserRef = useRef(currentUser);
@@ -1268,43 +1291,121 @@ export default function App() {
     return () => supabase.removeChannel(ch);
   }, [session, loading, dbError]);
 
-  // 4. Polling fallback for notifications (in case Realtime is not enabled in Supabase)
-  const lastMsgCountRef = useRef(null);
-  const lastDevCountRef = useRef(null);
+  // 4. Unified polling fallback — covers all notification types when Realtime is unreliable
+  const lastSeenDevUpdateRef = useRef({}); // { devId: latest update created_date, "sc_"+devId, "av_"+devId+"_"+name }
+  const knownDevIdsRef = useRef(null); // null = first load, Set after first load
   const lastPendingRef  = useRef(null);
   useEffect(() => {
     if (!session || !currentUser) return;
-    const poll = async () => {
-      try {
-        // Polling only checks pending users — Realtime handles messages & devs
-        if (currentUser?.role === "admin") {
+    const interval = setInterval(async () => {
+      const cu = currentUserRef.current;
+      if (!cu) return;
+
+      // === Admin: notify when new signup requests arrive ===
+      if (cu.role === "admin") {
+        try {
           const allUsers = await db.getUsers();
           const pending = allUsers.filter(u => u.status === "pending");
           const prevPending = lastPendingRef.current;
           if (prevPending !== null && pending.length > prevPending) {
-            const newPending = allUsers.filter(u => u.status === "pending").slice(-(pending.length - prevPending));
-            newPending.forEach(u => {
-              addNotification("pending", {name: u.full_name, email: u.email}, null, "pending");
-            });
+            const newPending = pending.slice(-(pending.length - prevPending));
+            newPending.forEach(u => addNotification("pending", {name: u.full_name, email: u.email}, null, "pending"));
             setUsers(allUsers);
-          } else if (prevPending === null) {
-            setUsers(allUsers);
-          }
+          } else if (prevPending === null) { setUsers(allUsers); }
           lastPendingRef.current = pending.length;
-        }
-      } catch(e) {}
-    };
-    poll();
-    const interval = setInterval(poll, 60000); // poll every 60s — lightweight, only checks pending users
-    return () => clearInterval(interval);
-  }, [session, currentUser]);
+        } catch(e) {}
+      }
 
-  // Fallback polling for devs+visits every 15s — ensures updates show even if Realtime is unreliable
-  useEffect(() => {
-    if (!session || !currentUser) return;
-    const interval = setInterval(() => {
-      db.getDevs().then(setDevs);
-      db.getVisits().then(setVisits);
+      const [newDevs] = await Promise.all([db.getDevs(), db.getVisits().then(setVisits)]);
+      setDevs(newDevs);
+
+      // === Supplier: notify when new dev is assigned to their factory ===
+      if (cu.role === "supplier" && cu.factory_id) {
+        const myDevs = newDevs.filter(d => {
+          const fids = Array.isArray(d.factory_ids) ? d.factory_ids : JSON.parse(d.factory_ids || "[]");
+          return fids.includes(cu.factory_id);
+        });
+        if (knownDevIdsRef.current === null) {
+          // First poll — just record existing devs, don't notify
+          knownDevIdsRef.current = new Set(myDevs.map(d => d.id));
+        } else {
+          myDevs.forEach(d => {
+            if (!knownDevIdsRef.current.has(d.id)) {
+              knownDevIdsRef.current.add(d.id);
+              addNotification("newDevSupplier", { title: d.title || "" }, d.id, "dev");
+            }
+          });
+        }
+      }
+
+      // === Admin/User: notify when a supplier submits an update ===
+      if (cu.role !== "supplier") {
+        newDevs.forEach(dev => {
+          if (!dev.updates?.length) return;
+          const latestUpd = dev.updates[dev.updates.length - 1];
+          if (!latestUpd) return;
+          const prevSeen = lastSeenDevUpdateRef.current[dev.id];
+          if (prevSeen === undefined) {
+            // First poll — just record, don't notify
+            lastSeenDevUpdateRef.current[dev.id] = latestUpd.created_date;
+          } else if (latestUpd.created_date !== prevSeen) {
+            lastSeenDevUpdateRef.current[dev.id] = latestUpd.created_date;
+            const isInvolved = cu.role === "admin" || dev.team_member_id === cu.id || dev.assigned_user_id === cu.id;
+            if (isInvolved && cu.full_name !== latestUpd.submitted_by) {
+              addNotification("devUpdate", {
+                factory: latestUpd.factory_name || "Supplier",
+                title: dev.title || "",
+                notes: latestUpd.production_status?.slice(0, 40) || latestUpd.notes?.slice(0, 40) || "",
+              }, dev.id, "dev");
+            }
+          }
+        });
+      }
+
+      // === Admin/User: notify when supplier confirms receipt ===
+      if (cu.role !== "supplier") {
+        newDevs.forEach(dev => {
+          const hist = dev.status_history || [];
+          const confirmedEntry = hist.find(h => h.status === "supplier_confirmed");
+          if (!confirmedEntry) return;
+          const key = "sc_" + dev.id;
+          if (lastSeenDevUpdateRef.current[key]) return; // already notified
+          // Check if this entry is recent (within last 2 minutes — meaning we just missed the realtime)
+          const entryAge = Date.now() - new Date(confirmedEntry.changed_at).getTime();
+          if (entryAge < 120000) {
+            const isInvolved = cu.role === "admin" || dev.team_member_id === cu.id || dev.assigned_user_id === cu.id;
+            if (isInvolved) {
+              addNotification("supplierConfirmed", {
+                title: dev.title || "",
+                factory: dev.factory_names?.[0] || "Supplier",
+              }, dev.id, "dev");
+            }
+          }
+          lastSeenDevUpdateRef.current[key] = true;
+        });
+      }
+
+      // === Supplier: notify when admin/user views their dev (admin_viewed in history) ===
+      if (cu.role === "supplier" && cu.factory_id) {
+        newDevs.forEach(dev => {
+          const fids = Array.isArray(dev.factory_ids) ? dev.factory_ids : JSON.parse(dev.factory_ids || "[]");
+          if (!fids.includes(cu.factory_id)) return;
+          const hist = dev.status_history || [];
+          const viewedEntries = hist.filter(h => h.status === "admin_viewed");
+          viewedEntries.forEach(entry => {
+            const key = "av_" + dev.id + "_" + entry.changed_by;
+            if (lastSeenDevUpdateRef.current[key]) return;
+            const entryAge = Date.now() - new Date(entry.changed_at).getTime();
+            if (entryAge < 120000) {
+              addNotification("devViewed", {
+                viewer: entry.changed_by || "Team",
+                title: dev.title || "",
+              }, dev.id, "dev");
+            }
+            lastSeenDevUpdateRef.current[key] = true;
+          });
+        });
+      }
     }, 15000);
     return () => clearInterval(interval);
   }, [session, currentUser]);
@@ -1342,6 +1443,7 @@ export default function App() {
 
   const getFactory = (id) => factories.find((f) => f.id === id);
   const getUser    = (id) => users.find((u) => u.id === id);
+  const getDisplayName = (user) => user?.chinese_name || user?.full_name || "";
 
   const needsFollowUp = devs.filter(
     (d) => (d.status === "open" || d.status === "in_progress") && (!d.updates || d.updates.length === 0) && daysAgo(d.created_date) >= 3
@@ -2476,11 +2578,15 @@ function DevelopmentsPage({ devs, setDevs, factories, users, currentUser, onView
                               </div>
                           }
                           {/* Team member name on thumbnail */}
-                          {dev.team_member_name && (
-                            <div className="absolute bottom-0 left-0 right-0 bg-black/60 px-2 py-1">
-                              <p className="text-white text-xs font-medium truncate text-center">👤 {dev.team_member_name}</p>
-                            </div>
-                          )}
+                          {dev.team_member_name && (() => {
+                            const member = users.find(u => u.id === dev.team_member_id);
+                            const displayName = member?.chinese_name || dev.team_member_name;
+                            return (
+                              <div className="absolute bottom-0 left-0 right-0 bg-black/60 px-2 py-1">
+                                <p className="text-white text-xs font-medium truncate text-center">👤 {displayName}</p>
+                              </div>
+                            );
+                          })()}
                           {isNew && (
                             <div className="absolute top-2 left-2">
                               <span className="bg-emerald-500 text-white text-xs font-bold px-2 py-0.5 rounded-full animate-pulse">New</span>
@@ -2499,11 +2605,15 @@ function DevelopmentsPage({ devs, setDevs, factories, users, currentUser, onView
                           {dev.special_remarks && (
                             <p className="text-xs text-slate-600 mt-1.5 bg-slate-50 rounded-lg p-2 border border-slate-100">{dev.special_remarks}</p>
                           )}
-                          {latestUpdate && (
-                            <div className="mt-2 p-2 bg-purple-50 rounded-lg border border-purple-100">
-                              <p className="text-xs text-purple-700 font-medium">Latest update: {latestUpdate.notes?.slice(0, 80)}{latestUpdate.notes?.length > 80 ? "…" : ""}</p>
-                            </div>
-                          )}
+                          {latestUpdate && (() => {
+                            const preview = latestUpdate.production_status || latestUpdate.notes || "";
+                            return preview ? (
+                              <div className="mt-2 p-2 bg-purple-50 rounded-lg border border-purple-100">
+                                <p className="text-xs text-purple-500 uppercase tracking-wide font-semibold mb-0.5">Latest update</p>
+                                <p className="text-xs text-purple-700">{preview.slice(0, 100)}{preview.length > 100 ? "…" : ""}</p>
+                              </div>
+                            ) : null;
+                          })()}
                           <div className="mt-3 flex items-center justify-between">
                             <p className="text-xs text-slate-400">{fmtDate(dev.created_date)}</p>
                             <Btn variant="purple" size="sm" onClick={() => { markDevSeen(dev.id); markSeen(dev.id, dev.updates?.[0]?.created_date); onView(dev.id); }}>View & Update →</Btn>
@@ -2719,7 +2829,7 @@ function DevForm({ dev, factories, users, currentUser, onSave, onCancel }) {
     material: "", size: "", weight: "",
     internal_estimated_date: "", internal_estimated_price: "",
     internal_notes: "",
-    special_remarks: "", picture_url: "", additional_pictures: [], artwork_files: [], status: "open",
+    special_remarks: "", picture_url: "", additional_pictures: [], artwork_files: [], status: "pending",
   });
 
   const set = (key, val) => setForm((p) => ({ ...p, [key]: val }));
@@ -2897,6 +3007,26 @@ function DevDetailPage({ devId, devs, setDevs, factories, getFactory, getUser, o
   if (!dev) return null;
   const isAdmin    = currentUser?.role === "admin";
   const isSupplier = currentUser?.role === "supplier";
+
+  // Record when admin/user opens this dev for the first time (so supplier gets notified via status history)
+  useEffect(() => {
+    if (!dev || !currentUser || currentUser.role === "supplier" || currentUser.role === "viewer") return;
+    const viewerName = currentUser.full_name || "";
+    const alreadyViewed = (dev.status_history || []).some(
+      h => h.status === "admin_viewed" && h.changed_by === viewerName
+    );
+    if (!alreadyViewed) {
+      const entry = {
+        status: "admin_viewed",
+        changed_by: viewerName,
+        changed_at: new Date().toISOString(),
+        label: `Viewed by ${viewerName}`,
+      };
+      const newHistory = [...(dev.status_history || []), entry];
+      db.upsertDev({ ...dev, status_history: newHistory, updates: undefined, messages: undefined });
+      setDevs(p => p.map(d => d.id === devId ? { ...d, status_history: newHistory } : d));
+    }
+  }, [devId]);
 
   // Unread messages: messages not sent by current user and not read by them
   const unreadCount = (dev.messages || []).filter(m =>
@@ -3088,8 +3218,8 @@ function DevDetailPage({ devId, devs, setDevs, factories, getFactory, getUser, o
                             label: "Supplier confirmed receipt & started process",
                           };
                           const newHistory = [...(dev.status_history || []), confirmEntry];
-                          await db.upsertDev({ ...dev, status_history: newHistory, updates: undefined, messages: undefined });
-                          setDevs(p => p.map(d => d.id === devId ? { ...d, status_history: newHistory } : d));
+                          await db.upsertDev({ ...dev, status: "open", status_history: newHistory, updates: undefined, messages: undefined });
+                          setDevs(p => p.map(d => d.id === devId ? { ...d, status: "open", status_history: newHistory } : d));
                           showToast("✅ Confirmed! You can now submit updates.");
                         }} className="mx-auto">
                           ✅ Confirm Receipt & Start Process
@@ -3126,13 +3256,18 @@ function DevDetailPage({ devId, devs, setDevs, factories, getFactory, getUser, o
                       {[...(dev.status_history || [])].map((h, i) => {
                         const colors = {
                           open: "bg-blue-100 text-blue-700",
+                          pending: "bg-slate-100 text-slate-600",
                           in_progress: "bg-amber-100 text-amber-700",
                           completed: "bg-green-100 text-green-700",
                           cancelled: "bg-red-100 text-red-700",
                           supplier_confirmed: "bg-emerald-100 text-emerald-700",
                           update_submitted: "bg-purple-100 text-purple-700",
+                          admin_viewed: "bg-sky-100 text-sky-700",
                         };
-                        const dotColor = h.status === "supplier_confirmed" ? "bg-emerald-400" : h.status === "update_submitted" ? "bg-purple-400" : "bg-slate-400";
+                        const dotColor = h.status === "supplier_confirmed" ? "bg-emerald-400"
+                          : h.status === "update_submitted" ? "bg-purple-400"
+                          : h.status === "admin_viewed" ? "bg-sky-400"
+                          : "bg-slate-400";
                         const label = h.label || DEV_STATUS_LABEL()[h.status] || h.status;
                         return (
                           <div key={i} className="flex items-start gap-3 pl-8 relative pb-4">
@@ -3142,7 +3277,7 @@ function DevDetailPage({ devId, devs, setDevs, factories, getFactory, getUser, o
                                 <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${colors[h.status] || "bg-slate-100 text-slate-600"}`}>
                                   {label}
                                 </span>
-                                <span className="text-xs text-slate-400 whitespace-nowrap">{fmtDate(h.changed_at)}</span>
+                                <span className="text-xs text-slate-400 whitespace-nowrap">{fmtDate(h.changed_at, true)}</span>
                               </div>
                               <p className="text-xs text-slate-500 mt-1">by {h.changed_by}</p>
                             </div>
@@ -3207,7 +3342,8 @@ function DevDetailPage({ devId, devs, setDevs, factories, getFactory, getUser, o
                         <div className="flex items-start gap-3 py-2">
                           <div className="w-9 h-9 rounded-xl bg-blue-100 flex items-center justify-center text-blue-600 flex-shrink-0">{Icon.user}</div>
                           <div>
-                            <p className="font-medium text-slate-800 text-sm">{seller.full_name}</p>
+                            <p className="font-medium text-slate-800 text-sm">{seller.chinese_name || seller.full_name}</p>
+                            {seller.chinese_name && <p className="text-xs text-slate-400">{seller.full_name}</p>}
                             {seller.email && <p className="text-xs text-slate-500 flex items-center gap-1 mt-0.5">{Icon.mail} {seller.email}</p>}
                             {seller.wechat_id ? <p className="text-xs text-green-600 font-mono mt-0.5 flex items-center gap-1">{Icon.wechat} {seller.wechat_id}</p>
                               : <p className="text-xs text-red-400 mt-0.5">⚠ No WeChat ID</p>}
@@ -3627,6 +3763,7 @@ function FactoryForm({ fac, onSave, onCancel }) {
 function UsersPage({ users, setUsers, factories, currentUser, showToast, askConfirm }) {
   const [editingId, setEditingId] = useState(null);
   const [editName, setEditName]   = useState("");
+  const [editChineseName, setEditChineseName] = useState("");
   const [editEmail, setEditEmail] = useState("");
   const [editRole, setEditRole]   = useState("");
   const [editFactory, setEditFactory] = useState("");
@@ -3660,13 +3797,13 @@ function UsersPage({ users, setUsers, factories, currentUser, showToast, askConf
   }
 
   function startEdit(u) {
-    setEditingId(u.id); setEditName(u.full_name || ""); setEditEmail(u.email || "");
+    setEditingId(u.id); setEditName(u.full_name || ""); setEditChineseName(u.chinese_name || ""); setEditEmail(u.email || "");
     setEditRole(u.role || "user"); setEditFactory(u.factory_id || ""); setEditWechat(u.wechat_id || "");
   }
 
   async function saveEdit(u) {
     const fac = factories.find((f) => f.id === editFactory);
-    const updated = { ...u, full_name: editName, email: editEmail, role: editRole,
+    const updated = { ...u, full_name: editName, chinese_name: editChineseName, email: editEmail, role: editRole,
       factory_id: editRole === "supplier" ? editFactory : null,
       factory_name: editRole === "supplier" ? fac?.name : null, wechat_id: editWechat };
     const saved = await db.upsertUser(updated);
@@ -3821,7 +3958,7 @@ function UsersPage({ users, setUsers, factories, currentUser, showToast, askConf
           <div className="overflow-x-auto">
             <table className="w-full">
               <thead className="bg-slate-50 border-b border-slate-200">
-                <tr>{["User", "Email", "Role", "WeChat ID", "Factory", ""].map((h) => (
+                <tr>{["User", "Chinese Name", "Email", "Role", "WeChat ID", "Factory", ""].map((h) => (
                   <th key={h} className="px-5 py-3.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap">{h}</th>
                 ))}</tr>
               </thead>
@@ -3835,6 +3972,11 @@ function UsersPage({ users, setUsers, factories, currentUser, showToast, askConf
                             <div className="w-8 h-8 rounded-full bg-amber-100 flex items-center justify-center text-amber-600">{Icon.user}</div>
                             <span className="font-medium text-slate-800 text-sm">{u.full_name || <span className="text-slate-400 italic">No name</span>}</span>
                           </div>}
+                    </td>
+                    <td className="px-5 py-4">
+                      {editingId === u.id
+                        ? <Input value={editChineseName} onChange={(e) => setEditChineseName(e.target.value)} placeholder="中文名" className="h-9 w-28" />
+                        : <span className="text-sm text-slate-600">{u.chinese_name || <span className="text-slate-300 text-xs">—</span>}</span>}
                     </td>
                     <td className="px-5 py-4 text-sm text-slate-600">
                       {editingId === u.id
