@@ -250,7 +250,7 @@ const db = {
   async approveUser(id)          { const { data } = await supabase.from("users").update({ status: "approved" }).eq("id", id).select().single(); return data; },
   async rejectUser(id)           { await supabase.from("users").delete().eq("id", id); },
   async upsertUser(u)           { const { data } = await supabase.from("users").upsert(u).select().single(); return data; },
-  async deleteUser(id)          { await supabase.from("users").delete().eq("id", id); },
+  async deleteUser(id)          { await supabase.from("users").update({ status: "blocked" }).eq("id", id); },
 
   // DEVELOPMENTS
   async getDevs() {
@@ -543,11 +543,11 @@ function LoginScreen({ onLogin }) {
     if (err) { setError(err.message); return; }
     // Require an active user row — blocks deleted and pending users
     const { data: userRow } = await supabase.from("users").select("status").eq("email", email).maybeSingle();
-    if (!userRow || userRow.status === "pending") {
+    if (!userRow || userRow.status === "pending" || userRow.status === "blocked") {
       await supabase.auth.signOut();
       setError(loginLang === "zh"
-        ? (!userRow ? "此账户不存在或已被删除。" : "您的账户正在等待管理员审批，请稍后再试。")
-        : (!userRow ? "This account does not exist or has been removed." : "Your account is pending admin approval. Please try again later."));
+        ? (!userRow || userRow.status === "blocked" ? "此账户已被停用，请联系管理员。" : "您的账户正在等待管理员审批，请稍后再试。")
+        : (!userRow || userRow.status === "blocked" ? "This account has been disabled. Please contact your admin." : "Your account is pending admin approval. Please try again later."));
       return;
     }
     onLogin(data.session);
@@ -825,7 +825,7 @@ export default function App() {
       if (!session) { setSession(null); return; }
       // Require a valid active user row — blocks deleted users and pending users
       const { data: userRow } = await supabase.from("users").select("status").eq("email", session.user.email).maybeSingle();
-      if (!userRow || userRow.status === "pending") {
+      if (!userRow || userRow.status === "pending" || userRow.status === "blocked") {
         await supabase.auth.signOut();
         setSession(null);
         return;
@@ -3136,10 +3136,10 @@ function UsersPage({ users, setUsers, factories, currentUser, showToast, askConf
   }
 
   async function rejectUser(u) {
-    askConfirm(`Reject and delete ${u.full_name}? They will not be able to log in.`, async () => {
-      await db.deleteUser(u.id);
+    askConfirm(`Reject ${u.full_name}? They will not be able to log in.`, async () => {
+      await db.deleteUser(u.id); // sets status = blocked
       setUsers(p => p.filter(x => x.id !== u.id));
-      showToast(`${u.full_name} rejected and removed.`);
+      showToast(`${u.full_name} rejected.`);
     });
   }
 
@@ -3159,12 +3159,18 @@ function UsersPage({ users, setUsers, factories, currentUser, showToast, askConf
   }
 
   async function deleteUser(id) {
-    if (id === currentUser?.id) { showToast("⚠ Cannot delete yourself", "error"); return; }
-    askConfirm("Delete this user? This cannot be undone.", async () => {
+    if (id === currentUser?.id) { showToast("⚠ Cannot block yourself", "error"); return; }
+    askConfirm("Block this user? They will not be able to log in until unblocked.", async () => {
       await db.deleteUser(id);
-      setUsers((p) => p.filter((u) => u.id !== id));
-      showToast("User deleted");
+      setUsers((p) => p.map((u) => u.id === id ? { ...u, status: "blocked" } : u));
+      showToast("User blocked — they can no longer log in.");
     });
+  }
+
+  async function unblockUser(u) {
+    const saved = await db.approveUser(u.id);
+    if (saved) setUsers(p => p.map(x => x.id === u.id ? { ...x, status: "approved" } : x));
+    showToast(`✓ ${u.full_name} unblocked — they can now log in again.`);
   }
 
   async function addUser() {
@@ -3311,9 +3317,17 @@ function UsersPage({ users, setUsers, factories, currentUser, showToast, askConf
                         ? <div className="flex items-center justify-end gap-2"><Btn variant="dark" size="sm" onClick={() => saveEdit(u)}>{Icon.check}</Btn><Btn variant="outline" size="sm" onClick={() => setEditingId(null)}>{Icon.close}</Btn></div>
                         : !notAdmin && (
                           <div className="flex items-center justify-end gap-1">
-                            <Btn variant="ghost" size="sm" onClick={() => startEdit(u)}>{Icon.edit} {t("edit")}</Btn>
-                            <Btn variant="ghost" size="sm" onClick={() => resetPassword(u.email)} className="text-blue-500 hover:text-blue-700" title="Send password reset email">🔑 Reset</Btn>
-                            <Btn variant="ghost" size="sm" onClick={() => deleteUser(u.id)} className="text-red-500 hover:text-red-700">{Icon.trash}</Btn>
+                            {u.status === "blocked"
+                              ? <>
+                                  <span className="text-xs px-2 py-0.5 rounded-full bg-red-100 text-red-700 font-medium mr-1">Blocked</span>
+                                  <Btn variant="ghost" size="sm" onClick={() => unblockUser(u)} className="text-green-600 hover:text-green-800">✓ Unblock</Btn>
+                                </>
+                              : <>
+                                  <Btn variant="ghost" size="sm" onClick={() => startEdit(u)}>{Icon.edit} {t("edit")}</Btn>
+                                  <Btn variant="ghost" size="sm" onClick={() => resetPassword(u.email)} className="text-blue-500 hover:text-blue-700" title="Send password reset email">🔑 Reset</Btn>
+                                  <Btn variant="ghost" size="sm" onClick={() => deleteUser(u.id)} className="text-red-500 hover:text-red-700">🚫 Block</Btn>
+                                </>
+                            }
                           </div>
                         )}
                     </td>
