@@ -529,175 +529,234 @@ function ConfirmDialog({ message, onConfirm, onCancel }) {
 // ─────────────────────────────────────────────────────────────────────────────
 // Slideshow Viewer — for "viewer" role, shown on TV/big screen
 // ─────────────────────────────────────────────────────────────────────────────
-function SlideshowViewer({ visits, onSignOut }) {
-  const SLIDE_DURATION = 30000; // 30 seconds per slide
-  const sorted = [...visits]
-    .filter(v => v.picture_url || v.additional_pictures?.length > 0)
-    .sort((a, b) => new Date(b.visit_date) - new Date(a.visit_date));
-  const all = [...visits].sort((a, b) => new Date(b.visit_date) - new Date(a.visit_date));
-  const slides = sorted.length > 0 ? sorted : all;
+function SlideshowViewer({ visits, devs, onSignOut }) {
+  const DURATION = 30000;
+  const sorted = [...visits].sort((a, b) => new Date(b.visit_date) - new Date(a.visit_date));
 
-  const [idx, setIdx] = useState(0);
+  // Build sequence: visit, dashboard, visit, dashboard...
+  const sequence = [];
+  sorted.forEach((v, i) => {
+    sequence.push({ type: "visit", data: v, index: i });
+    sequence.push({ type: "dashboard" });
+  });
+
+  const [seqIdx, setSeqIdx] = useState(0);
   const [fade, setFade] = useState(true);
   const [progress, setProgress] = useState(0);
-  const [paused, setPaused] = useState(false);
-  const progressRef = useRef(null);
-  const startRef = useRef(Date.now());
-
-  const current = slides[idx] || null;
-
-  // Collect all photos for current slide
-  const photos = [];
-  if (current?.picture_url) photos.push(current.picture_url);
-  if (current?.additional_pictures?.length) photos.push(...current.additional_pictures);
   const [photoIdx, setPhotoIdx] = useState(0);
+  const startRef = useRef(Date.now());
+  const intervalRef = useRef(null);
+
+  const current = sequence[seqIdx] || sequence[0];
+  const visit = current?.type === "visit" ? current.data : null;
+  const photos = visit ? [visit.picture_url, ...(visit.additional_pictures || [])].filter(Boolean) : [];
 
   function goTo(newIdx) {
     setFade(false);
     setTimeout(() => {
-      setIdx(newIdx);
+      const i = ((newIdx % sequence.length) + sequence.length) % sequence.length;
+      setSeqIdx(i);
       setPhotoIdx(0);
-      setFade(true);
       setProgress(0);
       startRef.current = Date.now();
-    }, 400);
+      setFade(true);
+    }, 500);
   }
 
-  function next() { goTo((idx + 1) % slides.length); }
-  function prev() { goTo((idx - 1 + slides.length) % slides.length); }
+  function next() { goTo(seqIdx + 1); }
+  function prev() { goTo(seqIdx - 1); }
 
-  // Progress bar + auto-advance
+  // Auto-advance
   useEffect(() => {
-    if (paused || !slides.length) return;
-    progressRef.current = setInterval(() => {
+    if (!sequence.length) return;
+    intervalRef.current = setInterval(() => {
       const elapsed = Date.now() - startRef.current;
-      const pct = Math.min((elapsed / SLIDE_DURATION) * 100, 100);
+      const pct = Math.min((elapsed / DURATION) * 100, 100);
       setProgress(pct);
-      if (pct >= 100) {
-        clearInterval(progressRef.current);
-        next();
-      }
+      if (pct >= 100) { clearInterval(intervalRef.current); next(); }
     }, 100);
-    return () => clearInterval(progressRef.current);
-  }, [idx, paused, slides.length]);
+    return () => clearInterval(intervalRef.current);
+  }, [seqIdx, sequence.length]);
 
-  // Cycle through multiple photos within a slide
+  // Cycle photos
   useEffect(() => {
     if (photos.length <= 1) return;
-    const t = setInterval(() => {
-      setPhotoIdx(p => (p + 1) % photos.length);
-    }, SLIDE_DURATION / photos.length);
+    const t = setInterval(() => setPhotoIdx(p => (p + 1) % photos.length), DURATION / photos.length);
     return () => clearInterval(t);
-  }, [idx, photos.length]);
+  }, [seqIdx, photos.length]);
 
-  if (!slides.length) return (
-    <div className="min-h-screen bg-black flex items-center justify-center text-white text-2xl">No visits to display</div>
+  if (!sequence.length) return (
+    <div className="min-h-screen bg-black flex items-center justify-center text-white text-4xl">No visits to display</div>
   );
 
-  return (
-    <div className="min-h-screen bg-black flex flex-col relative overflow-hidden select-none"
-      onClick={() => next()}>
-      {/* Big photo */}
-      <div className={`absolute inset-0 transition-opacity duration-500 ${fade ? "opacity-100" : "opacity-0"}`}>
-        {photos.length > 0 ? (
-          <img src={photos[photoIdx]} alt="" className="w-full h-full object-contain bg-black" />
-        ) : (
-          <div className="w-full h-full flex items-center justify-center">
-            <div className="flex flex-col items-center gap-4 text-slate-600">
-              <svg width="80" height="80" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={0.8}><rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline strokeLinecap="round" strokeLinejoin="round" points="21 15 16 10 5 21"/></svg>
-              <span className="text-xl">No photo</span>
+  // Stats for dashboard screen
+  const totalVisits = visits.length;
+  const thisMonth = visits.filter(v => { const d = new Date(v.visit_date); const n = new Date(); return d.getMonth() === n.getMonth() && d.getFullYear() === n.getFullYear(); }).length;
+  const activeDevs = devs?.filter(d => d.status === "open" || d.status === "in_progress").length || 0;
+  const recentVisits = sorted.slice(0, 8);
+
+  // Shared top bar
+  const TopBar = ({ label, counter }) => (
+    <div className="relative z-10 flex items-center justify-between px-12 pt-8 pb-4">
+      <div className="flex items-center gap-4">
+        <div className="w-14 h-14 rounded-2xl bg-amber-500 flex items-center justify-center shadow-lg">
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>
+        </div>
+        <div>
+          <p className="text-white font-black text-3xl tracking-tight">Loka Fashion</p>
+          <p className="text-amber-400 text-base font-medium">{label}</p>
+        </div>
+      </div>
+      <div className="flex items-center gap-6">
+        {counter && <span className="text-white/50 text-xl font-medium">{counter}</span>}
+        <button onClick={(e) => { e.stopPropagation(); onSignOut(); }}
+          className="text-white/40 hover:text-white text-base px-5 py-2 rounded-xl border border-white/20 hover:border-white/50 transition-all">
+          Exit
+        </button>
+      </div>
+    </div>
+  );
+
+  // Progress bar
+  const ProgressBar = () => (
+    <div className="absolute bottom-0 inset-x-0 h-1.5 bg-white/10">
+      <div className="h-full bg-amber-400 transition-none" style={{ width: `${progress}%` }} />
+    </div>
+  );
+
+  // Nav arrows
+  const Arrows = () => (<>
+    <button onClick={(e) => { e.stopPropagation(); prev(); }}
+      className="absolute left-6 top-1/2 -translate-y-1/2 z-20 w-16 h-16 rounded-full bg-white/10 hover:bg-white/25 flex items-center justify-center text-white transition-all opacity-0 hover:opacity-100">
+      <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+    </button>
+    <button onClick={(e) => { e.stopPropagation(); next(); }}
+      className="absolute right-6 top-1/2 -translate-y-1/2 z-20 w-16 h-16 rounded-full bg-white/10 hover:bg-white/25 flex items-center justify-center text-white transition-all opacity-0 hover:opacity-100">
+      <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+    </button>
+  </>);
+
+  // ── VISIT SLIDE ──
+  if (current.type === "visit" && visit) {
+    return (
+      <div className="min-h-screen bg-black flex flex-col relative overflow-hidden select-none" onClick={next}>
+        {/* Background photo */}
+        <div className={`absolute inset-0 transition-opacity duration-500 ${fade ? "opacity-100" : "opacity-0"}`}>
+          {photos.length > 0
+            ? <img src={photos[photoIdx]} alt="" className="w-full h-full object-contain bg-black" />
+            : <div className="w-full h-full bg-slate-900 flex items-center justify-center">
+                <svg width="120" height="120" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={0.5} className="text-slate-700"><rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+              </div>
+          }
+          <div className="absolute inset-x-0 bottom-0 h-1/2 bg-gradient-to-t from-black via-black/80 to-transparent" />
+          <div className="absolute inset-x-0 top-0 h-36 bg-gradient-to-b from-black/70 to-transparent" />
+        </div>
+
+        <TopBar label="Factory Visit" counter={`${current.index + 1} / ${sorted.length}`} />
+
+        {/* Main info — bottom */}
+        <div className={`relative z-10 mt-auto px-12 pb-10 transition-opacity duration-500 ${fade ? "opacity-100" : "opacity-0"}`}>
+          {photos.length > 1 && (
+            <div className="flex gap-2 mb-6">
+              {photos.map((_, i) => <div key={i} className={`h-1.5 rounded-full transition-all ${i === photoIdx ? "w-10 bg-amber-400" : "w-3 bg-white/30"}`} />)}
+            </div>
+          )}
+          <div className="flex items-end justify-between gap-12">
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-3 mb-3">
+                <span className="text-amber-400 text-xl font-bold uppercase tracking-widest">Factory Visit</span>
+                <span className="w-2 h-2 rounded-full bg-white/30" />
+                <span className="text-white/60 text-xl">{fmtDate(visit.visit_date, true)}</span>
+              </div>
+              <h2 className="text-white font-black leading-none mb-3 truncate" style={{fontSize:"clamp(2.5rem,5vw,4.5rem)"}}>{visit.factory_name}</h2>
+              <p className="text-amber-300 font-bold mb-3 truncate" style={{fontSize:"clamp(1.5rem,3vw,2.5rem)"}}>{visit.item}</p>
+              {visit.purpose && <p className="text-white/70 leading-relaxed line-clamp-2" style={{fontSize:"clamp(1rem,1.8vw,1.5rem)"}}>{visit.purpose}</p>}
+            </div>
+            <div className="flex-shrink-0 text-right space-y-4">
+              {visit.visitor_name && (
+                <div className="flex items-center justify-end gap-4">
+                  <div>
+                    <p className="text-white/50 text-base uppercase tracking-wider">Visitor</p>
+                    <p className="text-white font-bold" style={{fontSize:"clamp(1.2rem,2.5vw,2rem)"}}>{visit.visitor_name}</p>
+                  </div>
+                  <div className="w-20 h-20 rounded-full bg-amber-500/30 border-2 border-amber-400/60 flex items-center justify-center text-amber-300 font-black" style={{fontSize:"2rem"}}>
+                    {visit.visitor_name[0]}
+                  </div>
+                </div>
+              )}
+              {visit.location_address && (
+                <div className="flex items-center justify-end gap-2 text-white/50" style={{fontSize:"clamp(0.85rem,1.2vw,1.1rem)"}}>
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
+                  <span className="max-w-md truncate">{visit.location_address}</span>
+                </div>
+              )}
             </div>
           </div>
-        )}
-        {/* Dark gradient overlay at bottom */}
-        <div className="absolute inset-x-0 bottom-0 h-2/5 bg-gradient-to-t from-black/95 via-black/60 to-transparent" />
-        {/* Subtle top gradient for controls */}
-        <div className="absolute inset-x-0 top-0 h-24 bg-gradient-to-b from-black/60 to-transparent" />
-      </div>
-
-      {/* Top bar: logo + slide counter + sign out */}
-      <div className="relative z-10 flex items-center justify-between px-8 pt-6">
-        <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded-lg bg-amber-500 flex items-center justify-center">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>
-          </div>
-          <span className="text-white font-bold text-lg tracking-wide">Loka Fashion</span>
         </div>
-        <div className="flex items-center gap-4">
-          <span className="text-white/60 text-sm font-medium">{idx + 1} / {slides.length}</span>
-          <button onClick={(e) => { e.stopPropagation(); onSignOut(); }}
-            className="text-white/40 hover:text-white/80 text-xs px-3 py-1.5 rounded-lg border border-white/20 hover:border-white/40 transition-all">
-            Exit
-          </button>
-        </div>
+        <ProgressBar />
+        <Arrows />
       </div>
+    );
+  }
 
-      {/* Bottom info bar */}
-      <div className={`relative z-10 mt-auto px-8 pb-8 transition-opacity duration-500 ${fade ? "opacity-100" : "opacity-0"}`}>
-        {/* Photo dots if multiple */}
-        {photos.length > 1 && (
-          <div className="flex gap-2 mb-4">
-            {photos.map((_, i) => (
-              <div key={i} className={`h-1 rounded-full transition-all duration-300 ${i === photoIdx ? "w-6 bg-amber-400" : "w-2 bg-white/30"}`} />
+  // ── DASHBOARD SLIDE ──
+  return (
+    <div className="min-h-screen bg-slate-900 flex flex-col relative overflow-hidden select-none" onClick={next}>
+      <div className={`flex flex-col h-screen transition-opacity duration-500 ${fade ? "opacity-100" : "opacity-0"}`}>
+        <TopBar label="Visit Overview" />
+
+        <div className="flex-1 px-12 pb-12 flex flex-col gap-8 overflow-hidden">
+          {/* Stat boxes */}
+          <div className="grid grid-cols-3 gap-6 flex-shrink-0">
+            {[
+              { label: "Total Visits", value: totalVisits, color: "from-blue-600 to-blue-700", icon: <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg> },
+              { label: "This Month",   value: thisMonth,   color: "from-amber-500 to-amber-600", icon: <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg> },
+              { label: "Active Devs",  value: activeDevs,  color: "from-purple-600 to-purple-700", icon: <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 3H5a2 2 0 0 0-2 2v4m6-6h10a2 2 0 0 1 2 2v4M9 3v18m0 0h10a2 2 0 0 0 2-2V9M9 21H5a2 2 0 0 1-2-2V9m0 0h18"/></svg> },
+            ].map(({ label, value, color, icon }) => (
+              <div key={label} className={`bg-gradient-to-br ${color} rounded-3xl p-8 flex items-center gap-6 shadow-2xl`}>
+                <div className="text-white/70">{icon}</div>
+                <div>
+                  <p className="text-white font-black" style={{fontSize:"clamp(2.5rem,5vw,4rem)"}}>{value}</p>
+                  <p className="text-white/80 font-semibold" style={{fontSize:"clamp(1rem,1.5vw,1.4rem)"}}>{label}</p>
+                </div>
+              </div>
             ))}
           </div>
-        )}
 
-        <div className="flex items-end justify-between gap-8">
-          <div className="flex-1 min-w-0">
-            {/* Factory name */}
-            <div className="flex items-center gap-2 mb-2">
-              <span className="text-amber-400 text-xs font-semibold uppercase tracking-widest">Factory Visit</span>
-              <span className="w-1 h-1 rounded-full bg-white/30" />
-              <span className="text-white/50 text-xs">{fmtDate(current.visit_date, true)}</span>
+          {/* Recent visits grid */}
+          <div className="flex-1 min-h-0">
+            <p className="text-white/50 text-xl font-semibold uppercase tracking-widest mb-4">Recent Factory Visits</p>
+            <div className="grid grid-cols-4 gap-4 h-full">
+              {recentVisits.map((v, i) => {
+                const photo = v.picture_url || v.additional_pictures?.[0];
+                return (
+                  <div key={v.id} className={`rounded-2xl overflow-hidden bg-slate-800 flex flex-col border border-white/5 ${i === current.index - 1 || i === current.index ? "ring-2 ring-amber-400" : ""}`}>
+                    <div className="h-32 bg-slate-700 flex-shrink-0 overflow-hidden">
+                      {photo
+                        ? <img src={photo} alt="" className="w-full h-full object-cover" />
+                        : <div className="w-full h-full flex items-center justify-center text-slate-600">
+                            <svg width="32" height="32" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1}><rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+                          </div>
+                      }
+                    </div>
+                    <div className="p-3 flex-1">
+                      <p className="text-white font-bold text-base leading-tight truncate">{v.factory_name}</p>
+                      <p className="text-amber-400 text-sm truncate mt-0.5">{v.item}</p>
+                      <p className="text-white/40 text-xs mt-1">{fmtDate(v.visit_date, true)}</p>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
-            <h2 className="text-white text-3xl font-bold leading-tight mb-1 truncate">{current.factory_name}</h2>
-            <p className="text-amber-200 text-lg font-medium truncate">{current.item}</p>
-            {current.purpose && (
-              <p className="text-white/60 text-sm mt-2 line-clamp-2 max-w-2xl">{current.purpose}</p>
-            )}
           </div>
-
-          <div className="flex-shrink-0 text-right space-y-3">
-            {current.visitor_name && (
-              <div className="flex items-center justify-end gap-2">
-                <div className="text-right">
-                  <p className="text-white/40 text-xs uppercase tracking-wide">Visitor</p>
-                  <p className="text-white font-semibold">{current.visitor_name}</p>
-                </div>
-                <div className="w-10 h-10 rounded-full bg-amber-500/30 border border-amber-500/50 flex items-center justify-center text-amber-300 text-lg font-bold">
-                  {current.visitor_name[0]}
-                </div>
-              </div>
-            )}
-            {current.location_address && (
-              <div className="flex items-center justify-end gap-2 text-white/50 text-xs max-w-xs">
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
-                <span className="truncate max-w-[220px]">{current.location_address}</span>
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* Progress bar */}
-        <div className="mt-6 h-0.5 bg-white/10 rounded-full overflow-hidden">
-          <div className="h-full bg-amber-400 rounded-full transition-none" style={{ width: `${progress}%` }} />
         </div>
       </div>
-
-      {/* Prev/Next arrows — visible on hover */}
-      <button onClick={(e) => { e.stopPropagation(); prev(); }}
-        className="absolute left-4 top-1/2 -translate-y-1/2 z-20 w-12 h-12 rounded-full bg-white/10 hover:bg-white/25 flex items-center justify-center text-white transition-all opacity-0 hover:opacity-100 group-hover:opacity-100">
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
-      </button>
-      <button onClick={(e) => { e.stopPropagation(); next(); }}
-        className="absolute right-4 top-1/2 -translate-y-1/2 z-20 w-12 h-12 rounded-full bg-white/10 hover:bg-white/25 flex items-center justify-center text-white transition-all opacity-0 hover:opacity-100">
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
-      </button>
-
-      {/* Pause on hover hint */}
-      <div className="absolute bottom-2 left-1/2 -translate-x-1/2 text-white/20 text-xs z-20">Click anywhere to skip →</div>
+      <ProgressBar />
+      <Arrows />
     </div>
+  );
+}
+
   );
 }
 
@@ -1280,7 +1339,7 @@ export default function App() {
   if (dbError) return <ErrorScreen error={dbError} />;
 
   // Viewer role — fullscreen slideshow only
-  if (isViewer) return <SlideshowViewer visits={visits} onSignOut={async () => { await supabase.auth.signOut(); setSession(null); }} />;
+  if (isViewer) return <SlideshowViewer visits={visits} devs={devs} onSignOut={async () => { await supabase.auth.signOut(); setSession(null); }} />;
 
   let content = null;
   if (detail?.type === "dev") {
