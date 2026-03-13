@@ -2337,7 +2337,7 @@ function DevelopmentsPage({ devs, setDevs, factories, users, currentUser, onView
         if (!isOwner && !isAssigned) return false;
       }
       if (tab === "completed") return d.status === "completed" || d.status === "cancelled";
-      return d.status === "open" || d.status === "in_progress";
+      return d.status === "open" || d.status === "in_progress" || d.status === "pending";
     })
     .filter((d) => filterFactory === "all" || d.factory_ids?.includes(filterFactory))
     .filter((d) => filterUser === "all" || d.team_member_name === filterUser)
@@ -2348,7 +2348,7 @@ function DevelopmentsPage({ devs, setDevs, factories, users, currentUser, onView
       if (sortBy === "user") return (a.team_member_name || "").localeCompare(b.team_member_name || "");
       return new Date(b.created_date) - new Date(a.created_date);
     });
-  const openCount = factoryDevs.filter((d) => d.status === "open" || d.status === "in_progress").length;
+  const openCount = factoryDevs.filter((d) => d.status === "open" || d.status === "in_progress" || d.status === "pending").length;
   const doneCount = factoryDevs.filter((d) => d.status === "completed").length;
 
   async function saveDev(data, isNew) {
@@ -2414,7 +2414,7 @@ function DevelopmentsPage({ devs, setDevs, factories, users, currentUser, onView
   // ── Supplier dedicated view ──────────────────────────────────────────────
   if (isSupplier) {
     const myDevs = devs.filter(d => d.factory_ids?.includes(currentUser?.factory_id));
-    const myActive = myDevs.filter(d => d.status === "open" || d.status === "in_progress");
+    const myActive = myDevs.filter(d => d.status === "open" || d.status === "in_progress" || d.status === "pending");
     const myDone   = myDevs.filter(d => d.status === "completed" || d.status === "cancelled");
     const supplierList = supplierTab === "active" ? myActive : myDone;
 
