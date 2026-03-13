@@ -989,24 +989,22 @@ export default function App() {
     return () => clearInterval(interval);
   }, [session, currentUser]);
 
-  // Re-validate session every 30s — kicks out blocked/deleted users even if already logged in
+  // Re-validate every 20s — force reload if blocked/deleted so there's no stale state
   useEffect(() => {
     if (!session) return;
-    async function validateSession() {
-      const email = session?.user?.email;
-      if (!email) return;
+    const email = session?.user?.email;
+    if (!email) return;
+    const interval = setInterval(async () => {
       try {
         const { data: status } = await supabase.rpc("get_user_status", { user_email: email });
         if (status === null || status === "pending" || status === "blocked") {
           await supabase.auth.signOut();
-          setSession(null);
+          window.location.reload(); // force full reload — no stale state possible
         }
       } catch (e) {}
-    }
-    validateSession(); // run immediately
-    const interval = setInterval(validateSession, 30000);
+    }, 20000);
     return () => clearInterval(interval);
-  }, [session]);
+  }, [session?.user?.email]); // depend on email string, not session object
 
   async function signOut() {
     await supabase.auth.signOut();
