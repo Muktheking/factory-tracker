@@ -1108,6 +1108,18 @@ export default function App() {
     if (!k) return n.msg || "";
     if (k === "factoryAdded") return `${t("factoryAdded")}: ${d.name || ""}`;
     if (k === "infoEdited") return `${t("infoEdited")}: ${d.name || ""}`;
+    if (k === "factoryDeleted") return globalLang === "zh"
+      ? `工厂已删除: ${d.name || ""}`
+      : `Factory deleted: ${d.name || ""}`;
+    if (k === "userRoleChanged") return globalLang === "zh"
+      ? `${d.name || "用户"} 的角色已从 ${d.oldRole || ""} 改为 ${d.newRole || ""}`
+      : `${d.name || "User"}'s role changed from ${d.oldRole || ""} to ${d.newRole || ""}`;
+    if (k === "userDeleted") return globalLang === "zh"
+      ? `用户已删除: ${d.name || d.email || ""}`
+      : `User deleted: ${d.name || d.email || ""}`;
+    if (k === "devAssigned") return globalLang === "zh"
+      ? `您被分配到开发任务: "${d.title || ""}"`
+      : `You were assigned to a development: "${d.title || ""}"`;
     if (k === "newDev") return globalLang === "zh"
       ? `${d.team || "有人"}新建了开发: ${d.title || ""}`
       : `${d.team || "New development"}: ${d.title || ""}`;
@@ -1389,12 +1401,12 @@ export default function App() {
     content = (
       <DevelopmentsPage devs={filteredDevs} setDevs={setDevs} factories={factories} users={users}
         currentUser={currentUser} onView={(id) => setDetail({ type: "dev", id })}
-        showToast={showToast} onNotify={notifyFactory} askConfirm={askConfirm} />
+        showToast={showToast} onNotify={notifyFactory} askConfirm={askConfirm} pushNotif={pushNotif} />
     );
   } else if (page === "factories") {
     content = (
       <FactoriesPage factories={factories} setFactories={setFactories} currentUser={currentUser}
-        devs={devs} visits={visits} showToast={showToast} askConfirm={askConfirm} />
+        devs={devs} visits={visits} showToast={showToast} askConfirm={askConfirm} users={users} pushNotifToMany={pushNotifToMany} />
     );
   } else if (page === "users") {
     content = (
@@ -2282,7 +2294,7 @@ function VisitDetailPage({ visitId, visits, setVisits, factories, onBack, curren
 // ─────────────────────────────────────────────────────────────────────────────
 // Developments
 // ─────────────────────────────────────────────────────────────────────────────
-function DevelopmentsPage({ devs, setDevs, factories, users, currentUser, onView, showToast, onNotify, askConfirm }) {
+function DevelopmentsPage({ devs, setDevs, factories, users, currentUser, onView, showToast, onNotify, askConfirm, pushNotif }) {
   const [showForm, setShowForm]     = useState(false);
   const [editingDev, setEditingDev] = useState(null);
   const [search, setSearch]         = useState("");
@@ -2352,6 +2364,14 @@ function DevelopmentsPage({ devs, setDevs, factories, users, currentUser, onView
         setDevs(full);
         showToast(`${newDevs.length} developments created`);
         newDevs.forEach((nd) => nd && onNotify(nd, nd.factory_ids[0]));
+        // Notify assigned user for each new dev
+        if (pushNotif) {
+          newDevs.forEach(nd => {
+            if (nd?.assigned_user_id && nd.assigned_user_id !== currentUser?.id) {
+              pushNotif(nd.assigned_user_id, "devAssigned", { title: nd.title || "" }, nd.id, "dev");
+            }
+          });
+        }
       } else {
         const { updates: _, messages: __, ...record } = { ...data, id: genId("DEV-"), created_date: new Date().toISOString().slice(0, 10) };
         const saved = await db.upsertDev(record);
@@ -2360,14 +2380,25 @@ function DevelopmentsPage({ devs, setDevs, factories, users, currentUser, onView
           setDevs(full);
           showToast("Development created");
           onNotify(saved, saved.factory_ids?.[0]);
+          // Notify assigned user
+          if (pushNotif && saved.assigned_user_id && saved.assigned_user_id !== currentUser?.id) {
+            await pushNotif(saved.assigned_user_id, "devAssigned", { title: saved.title || "" }, saved.id, "dev");
+          }
         }
       }
     } else {
       const { updates: _, messages: __, ...record } = data;
+      const prevDev = devs.find(d => d.id === data.id);
       await db.upsertDev(record);
       const full = await db.getDevs();
       setDevs(full);
       showToast("Development updated");
+      // Notify newly assigned user if assignment changed
+      if (pushNotif && data.assigned_user_id && data.assigned_user_id !== prevDev?.assigned_user_id) {
+        if (data.assigned_user_id !== currentUser?.id) {
+          await pushNotif(data.assigned_user_id, "devAssigned", { title: data.title || "" }, data.id, "dev");
+        }
+      }
     }
     setShowForm(false); setEditingDev(null);
   }
@@ -2962,6 +2993,12 @@ function DevDetailPage({ devId, devs, setDevs, factories, getFactory, getUser, o
     setDevs(full);
     setShowEdit(false);
     showToast("Development updated");
+    // Notify newly assigned user if assignment changed
+    if (pushNotif && data.assigned_user_id && data.assigned_user_id !== dev.assigned_user_id) {
+      if (data.assigned_user_id !== currentUser?.id) {
+        await pushNotif(data.assigned_user_id, "devAssigned", { title: data.title || dev.title || "" }, devId, "dev");
+      }
+    }
   }
 
   async function del() {
@@ -3488,7 +3525,7 @@ function DevChat({ devId, dev, setDevs, currentUser, users = [], pushNotifToMany
 // ─────────────────────────────────────────────────────────────────────────────
 // Factories
 // ─────────────────────────────────────────────────────────────────────────────
-function FactoriesPage({ factories, setFactories, currentUser, devs = [], visits = [], showToast, askConfirm }) {
+function FactoriesPage({ factories, setFactories, currentUser, devs = [], visits = [], showToast, askConfirm, users = [], pushNotifToMany }) {
   const [showForm, setShowForm]           = useState(false);
   const [editingFactory, setEditingFactory] = useState(null);
   const [search, setSearch]               = useState("");
@@ -3506,13 +3543,22 @@ function FactoriesPage({ factories, setFactories, currentUser, devs = [], visits
     if (saved) setFactories((p) => isNew ? [...p, saved] : p.map((f) => f.id === saved.id ? saved : f));
     showToast(isNew ? t("factoryAdded") : t("infoEdited"));
     setShowForm(false); setEditingFactory(null);
+    if (pushNotifToMany) {
+      const otherAdminIds = users.filter(u => u.role === "admin" && u.id !== currentUser?.id).map(u => u.id);
+      await pushNotifToMany(otherAdminIds, isNew ? "factoryAdded" : "infoEdited", { name: saved.name || "" }, null, "factory");
+    }
   }
 
   async function del(id) {
+    const factory = factories.find(f => f.id === id);
     askConfirm("Delete this factory? This cannot be undone.", async () => {
       await db.deleteFactory(id);
       setFactories((p) => p.filter((f) => f.id !== id));
       showToast(t("deleteFactory"));
+      if (pushNotifToMany) {
+        const otherAdminIds = users.filter(u => u.role === "admin" && u.id !== currentUser?.id).map(u => u.id);
+        await pushNotifToMany(otherAdminIds, "factoryDeleted", { name: factory?.name || "" }, null, "factory");
+      }
     });
   }
 
@@ -3735,14 +3781,28 @@ function UsersPage({ users, setUsers, factories, currentUser, showToast, askConf
     const saved = await db.upsertUser(updated);
     if (saved) setUsers((p) => p.map((x) => x.id === u.id ? saved : x));
     setEditingId(null); showToast("User updated");
+    // Notify other admins if role changed
+    if (pushNotif && u.role !== editRole) {
+      const otherAdminIds = users.filter(x => x.role === "admin" && x.id !== currentUser?.id).map(x => x.id);
+      otherAdminIds.forEach(id => pushNotif(id, "userRoleChanged", {
+        name: editName, oldRole: u.role, newRole: editRole,
+      }, null, "pending"));
+    }
   }
 
   async function deleteUser(id) {
     if (id === currentUser?.id) { showToast("⚠ Cannot block yourself", "error"); return; }
+    const target = users.find(u => u.id === id);
     askConfirm("Block this user? They will not be able to log in until unblocked.", async () => {
       await db.deleteUser(id);
       setUsers((p) => p.map((u) => u.id === id ? { ...u, status: "blocked" } : u));
       showToast("User blocked — they can no longer log in.");
+      if (pushNotif && target) {
+        const otherAdminIds = users.filter(u => u.role === "admin" && u.id !== currentUser?.id).map(u => u.id);
+        otherAdminIds.forEach(adminId => pushNotif(adminId, "userDeleted", {
+          name: target.full_name, email: target.email, action: "blocked",
+        }, null, "pending"));
+      }
     });
   }
 
@@ -3757,13 +3817,18 @@ function UsersPage({ users, setUsers, factories, currentUser, showToast, askConf
     askConfirm(`Permanently delete ${u.full_name}? This removes them from the app and Supabase Auth completely.`, async () => {
       const { error } = await supabase.rpc("delete_user_completely", { user_email: u.email });
       if (error) {
-        // Fallback: at least block them in the app
         await db.deleteUser(u.id);
         setUsers(p => p.map(x => x.id === u.id ? { ...x, status: "blocked" } : x));
         showToast("⚠ Could not delete from Auth — user blocked instead. Run the SQL function first.", "error");
       } else {
         setUsers(p => p.filter(x => x.id !== u.id));
         showToast(`✓ ${u.full_name} permanently deleted.`);
+        if (pushNotif) {
+          const otherAdminIds = users.filter(x => x.role === "admin" && x.id !== currentUser?.id).map(x => x.id);
+          otherAdminIds.forEach(adminId => pushNotif(adminId, "userDeleted", {
+            name: u.full_name, email: u.email, action: "deleted",
+          }, null, "pending"));
+        }
       }
     });
   }
