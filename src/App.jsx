@@ -1239,10 +1239,11 @@ export default function App() {
               const active = !detail && page === item.id;
               return (
                 <button key={item.id} onClick={() => goPage(item.id)}
-                  className={`flex items-center gap-1.5 px-4 py-2.5 transition-all text-xs font-medium whitespace-nowrap flex-shrink-0 ${
+                  className={`flex flex-col sm:flex-row items-center gap-0.5 sm:gap-1.5 px-3 sm:px-4 py-2 sm:py-2.5 transition-all font-medium whitespace-nowrap flex-shrink-0 ${
                     active ? "border-b-2 border-amber-500 text-amber-400" : "text-slate-400 hover:text-white"
                   }`}>
-                  {item.icon}<span>{item.label}</span>
+                  {item.icon}
+                  <span className="text-[9px] sm:text-xs leading-tight">{item.label}</span>
                 </button>
               );
             })}
@@ -1574,21 +1575,23 @@ function VisitsPage({ visits, setVisits, factories, currentUser, onView, showToa
         )}
         {!showForm && (
           <>
-            <div className="flex flex-col sm:flex-row gap-3 mb-3">
-              <div className="relative flex-1">
+            <div className="flex flex-col gap-2 mb-3">
+              <div className="relative">
                 <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400">{Icon.search}</span>
-                <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder={t("search")} className="pl-11" />
+                <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder={t("search")} className="pl-11 w-full" />
               </div>
-              <Select value={filterFactory} onChange={setFilterFactory} className="sm:w-44">
-                <option value="all">{t("allFactories")}</option>
-                {factories.map((f) => <option key={f.id} value={f.id}>{f.name}</option>)}
-              </Select>
-              {isAdmin && (
-                <Select value={filterVisitor} onChange={setFilterVisitor} className="sm:w-40">
-                  <option value="all">{t("allVisitors")}</option>
-                  {visitors.map((v) => <option key={v} value={v}>{v}</option>)}
+              <div className="grid grid-cols-2 sm:flex sm:flex-row gap-2">
+                <Select value={filterFactory} onChange={setFilterFactory} className="w-full sm:w-44">
+                  <option value="all">{t("allFactories")}</option>
+                  {factories.map((f) => <option key={f.id} value={f.id}>{f.name}</option>)}
                 </Select>
-              )}
+                {isAdmin && (
+                  <Select value={filterVisitor} onChange={setFilterVisitor} className="w-full sm:w-40">
+                    <option value="all">{t("allVisitors")}</option>
+                    {visitors.map((v) => <option key={v} value={v}>{v}</option>)}
+                  </Select>
+                )}
+              </div>
             </div>
             <div className="flex flex-wrap gap-2 mb-5 items-center">
               {[["all", t("allTime")],["today", t("today")],["week", t("thisWeek")]].map(([v,l]) => (
@@ -1648,8 +1651,8 @@ function VisitCard({ visit, onEdit, onDelete, onView, currentUser }) {
   const canEdit = visit.visitor_name === currentUser?.full_name || currentUser?.role === "admin";
   return (
     <Card className="shadow-sm hover:shadow-lg transition-all overflow-hidden">
-      <div className="flex">
-        <div className="w-36 sm:w-44 flex-shrink-0 self-stretch bg-gradient-to-br from-slate-100 to-slate-200 flex items-center justify-center text-slate-400 overflow-hidden">
+      <div className="flex flex-col sm:flex-row">
+        <div className="w-full h-40 sm:w-44 sm:h-auto flex-shrink-0 sm:self-stretch bg-gradient-to-br from-slate-100 to-slate-200 flex items-center justify-center text-slate-400 overflow-hidden">
           {visit.picture_url ? <img src={visit.picture_url} alt="" className="w-full h-full object-contain bg-slate-100" /> : <div className="flex flex-col items-center gap-1 text-slate-300">
                   <svg width="24" height="24" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.2}><rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline strokeLinecap="round" strokeLinejoin="round" points="21 15 16 10 5 21"/></svg>
                   <span className="text-xs">No photo</span>
@@ -1681,10 +1684,12 @@ function VisitCard({ visit, onEdit, onDelete, onView, currentUser }) {
               )}
             </div>
           )}
-          <div className="mt-2 flex justify-end gap-1">
-            {canEdit && onEdit && <Btn variant="ghost" size="sm" onClick={onEdit}>{Icon.edit}</Btn>}
-            {onDelete && <Btn variant="ghost" size="sm" onClick={onDelete} className="text-red-400 hover:text-red-600">{Icon.trash}</Btn>}
-            <Btn variant="ghost" size="sm" onClick={onView}>{Icon.eye} {t("view")}</Btn>
+          <div className="mt-3 flex flex-col sm:flex-row sm:justify-end gap-1.5 sm:gap-1">
+            <div className="flex gap-1 justify-end">
+              {canEdit && onEdit && <Btn variant="ghost" size="sm" onClick={onEdit}>{Icon.edit}</Btn>}
+              {onDelete && <Btn variant="ghost" size="sm" onClick={onDelete} className="text-red-400 hover:text-red-600">{Icon.trash}</Btn>}
+            </div>
+            <Btn variant="ghost" size="sm" onClick={onView} className="w-full sm:w-auto justify-center border border-slate-200 sm:border-0">{Icon.eye} {t("view")}</Btn>
           </div>
         </div>
       </div>
@@ -2176,42 +2181,44 @@ function DevelopmentsPage({ devs, setDevs, factories, users, currentUser, onView
                   className={`px-5 py-3 text-sm font-medium transition-colors ${tab === v ? "text-purple-600 border-b-2 border-purple-500" : "text-slate-500 hover:text-slate-700"}`}>{l} ({count})</button>
               ))}
             </div>
-            <div className="flex flex-col sm:flex-row gap-3 mb-5">
-              <div className="relative flex-1">
+            <div className="flex flex-col gap-2 mb-5">
+              <div className="relative">
                 <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400">{Icon.search}</span>
-                <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder={t("searchDevs")} className="pl-11" />
+                <Input value={search} onChange={(e) => setSearch(e.target.value)} placeholder={t("searchDevs")} className="pl-11 w-full" />
               </div>
-              {!isSupplier && (
-                <Select value={filterFactory} onChange={setFilterFactory} className="sm:w-44">
-                  <option value="all">{t("allFactories")}</option>
-                  {factories.map((f) => <option key={f.id} value={f.id}>{f.name}</option>)}
+              <div className="grid grid-cols-2 sm:flex sm:flex-row gap-2">
+                {!isSupplier && (
+                  <Select value={filterFactory} onChange={setFilterFactory} className="w-full sm:w-44">
+                    <option value="all">{t("allFactories")}</option>
+                    {factories.map((f) => <option key={f.id} value={f.id}>{f.name}</option>)}
+                  </Select>
+                )}
+                <Select value={sortBy} onChange={setSortBy} className="w-full sm:w-40">
+                  <option value="created_date">{t("newestFirst")}</option>
+                  <option value="title">{t("nameAZ")}</option>
+                  {isAdmin && <option value="user">{t("byTeamMember")}</option>}
                 </Select>
-              )}
-              <Select value={sortBy} onChange={setSortBy} className="sm:w-40">
-                <option value="created_date">{t("newestFirst")}</option>
-                <option value="title">{t("nameAZ")}</option>
-                {isAdmin && <option value="user">{t("byTeamMember")}</option>}
-              </Select>
-              {isAdmin && (
-                <Select value={filterUser} onChange={setFilterUser} className="sm:w-44">
-                  <option value="all">{t("allTeamMembers")}</option>
-                  {allUsers.map(u => <option key={u} value={u}>{u}</option>)}
-                </Select>
-              )}
-              <button onClick={() => {
-                const rows = filtered.map(d => ({
-                  "ID": d.id, "Title": d.title, "Status": DEV_STATUS_LABEL()[d.status] || d.status,
-                  "Department": d.department, "Factory": d.factory_names?.join(", "),
-                  "Team Member": d.team_member_name, "Client": d.client_name,
-                  "Material": d.material, "Size": d.size, "Weight": d.weight,
-                  "Target Date": d.internal_estimated_date, "Target Price": d.internal_estimated_price,
-                  "Created": d.created_date,
-                }));
-                exportToExcel(rows, `developments_${new Date().toISOString().slice(0,10)}.xlsx`);
-              }} className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-medium bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 transition-colors whitespace-nowrap">
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-                Export ({filtered.length})
-              </button>
+                {isAdmin && (
+                  <Select value={filterUser} onChange={setFilterUser} className="w-full sm:w-44">
+                    <option value="all">{t("allTeamMembers")}</option>
+                    {allUsers.map(u => <option key={u} value={u}>{u}</option>)}
+                  </Select>
+                )}
+                <button onClick={() => {
+                  const rows = filtered.map(d => ({
+                    "ID": d.id, "Title": d.title, "Status": DEV_STATUS_LABEL()[d.status] || d.status,
+                    "Department": d.department, "Factory": d.factory_names?.join(", "),
+                    "Team Member": d.team_member_name, "Client": d.client_name,
+                    "Material": d.material, "Size": d.size, "Weight": d.weight,
+                    "Target Date": d.internal_estimated_date, "Target Price": d.internal_estimated_price,
+                    "Created": d.created_date,
+                  }));
+                  exportToExcel(rows, `developments_${new Date().toISOString().slice(0,10)}.xlsx`);
+                }} className="col-span-2 sm:col-span-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl text-xs font-medium bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 transition-colors whitespace-nowrap">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                  Export ({filtered.length})
+                </button>
+              </div>
             </div>
             {filtered.length === 0
               ? <EmptyState icon={Icon.flask} title={t("noDevsFound")} subtitle={t("createFirstDev")}
@@ -2254,9 +2261,9 @@ function DevCard({ dev, onEdit, onDelete, onView, hasNewUpdate }) {
   const targetOverdue = targetDate && new Date(targetDate) < new Date() && !isCompleted;
 
   return (
-    <Card className={`shadow-sm hover:shadow-lg transition-all overflow-hidden ${needsFollowUp ? "border-l-4 border-l-orange-400" : ""}`}>
-      <div className="flex">
-        <div className="w-40 sm:w-52 flex-shrink-0 self-stretch bg-gradient-to-br from-slate-100 to-slate-200 flex items-center justify-center text-slate-400 relative">
+    <Card className={`shadow-sm hover:shadow-lg transition-all overflow-hidden ${needsFollowUp ? "border-t-4 border-t-orange-400 sm:border-t-0 sm:border-l-4 sm:border-l-orange-400" : ""}`}>
+      <div className="flex flex-col sm:flex-row">
+        <div className="w-full h-44 sm:w-52 sm:h-auto flex-shrink-0 sm:self-stretch bg-gradient-to-br from-slate-100 to-slate-200 flex items-center justify-center text-slate-400 relative">
           {dev.picture_url ? <img src={dev.picture_url} alt={dev.title} className="w-full h-full object-contain bg-slate-100" /> : <div className="flex flex-col items-center gap-1 text-slate-300">
                   <svg width="24" height="24" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.2}><rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline strokeLinecap="round" strokeLinejoin="round" points="21 15 16 10 5 21"/></svg>
                   <span className="text-xs">No photo</span>
@@ -2308,10 +2315,12 @@ function DevCard({ dev, onEdit, onDelete, onView, hasNewUpdate }) {
               )}
             </div>
           )}
-          <div className="mt-2 flex justify-end gap-1">
-            {onEdit   && <Btn variant="ghost" size="sm" onClick={(e) => { e.stopPropagation(); onEdit(dev);    }}>{Icon.edit}</Btn>}
-            {onDelete && <Btn variant="ghost" size="sm" onClick={(e) => { e.stopPropagation(); onDelete(dev.id); }}>{Icon.trash}</Btn>}
-            <Btn variant="ghost" size="sm" onClick={onView}>{Icon.eye} {t("view")}</Btn>
+          <div className="mt-3 flex flex-col sm:flex-row sm:justify-end gap-1.5 sm:gap-1">
+            <div className="flex gap-1 justify-end sm:justify-end">
+              {onEdit   && <Btn variant="ghost" size="sm" onClick={(e) => { e.stopPropagation(); onEdit(dev);    }}>{Icon.edit}</Btn>}
+              {onDelete && <Btn variant="ghost" size="sm" onClick={(e) => { e.stopPropagation(); onDelete(dev.id); }}>{Icon.trash}</Btn>}
+            </div>
+            <Btn variant="ghost" size="sm" onClick={onView} className="w-full sm:w-auto justify-center border border-slate-200 sm:border-0">{Icon.eye} {t("view")}</Btn>
           </div>
         </div>
       </div>
