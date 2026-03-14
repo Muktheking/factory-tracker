@@ -196,6 +196,30 @@ function wgs84ToGcj02(lat, lng) {
 }
 
 const SUPABASE_URL  = "https://gtgwnvtckrnhzbjodgvd.supabase.co";
+// ── EmailJS config ────────────────────────────────────────────────────────────
+const EMAILJS_SERVICE_ID  = "service_x78l5ad";
+const EMAILJS_TEMPLATE_ID = "template_imrpdcg";
+const EMAILJS_PUBLIC_KEY  = "PPb7_rwXSmdYMdXFw";
+async function sendFollowUpEmail({ to_email, to_name, dev_title, factory_name, step_name, status_message }) {
+  if (!to_email) return;
+  try {
+    if (!window.emailjs) {
+      await new Promise((resolve, reject) => {
+        const s = document.createElement("script");
+        s.src = "https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js";
+        s.onload = () => { window.emailjs.init({ publicKey: EMAILJS_PUBLIC_KEY }); resolve(); };
+        s.onerror = reject;
+        document.head.appendChild(s);
+      });
+    }
+    await window.emailjs.send(EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID, {
+      to_email, to_name: to_name || "Team", dev_title, factory_name, step_name, status_message,
+    });
+    console.log("Follow-up email sent to", to_email);
+  } catch (err) {
+    console.error("EmailJS error:", err);
+  }
+}
 const SUPABASE_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imd0Z3dudnRja3JuaHpiam9kZ3ZkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMyMTAzNDAsImV4cCI6MjA4ODc4NjM0MH0.4-7mYTWKjabHOlvNMuNJ3o_pzhDDoGd_2XFDwIbGvNc";
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON);
 
@@ -1386,13 +1410,14 @@ export default function App() {
             const stepLabel = step ? step.label : stepId;
             const msgKey = daysOverdue === 0 ? "stepDueToday" : "stepOverdue";
             const msgData = { title: dev.title || "", step: stepLabel, factory: dev.factory_names?.[0] || "", days: daysOverdue };
-            supabase.from("users").select("id,role,factory_id").then(({ data: uRows }) => {
+            supabase.from("users").select("id,role,factory_id,email,full_name").then(({ data: uRows }) => {
               if (!uRows) return;
               const supplierUser = uRows.find(u => u.role === "supplier" && dev.factory_ids?.includes(u.factory_id));
               const recipientIds = [
                 ...uRows.filter(u => u.role === "admin").map(u => u.id),
                 dev.team_member_id, dev.assigned_user_id, supplierUser?.id,
               ].filter((id, i, arr) => id && arr.indexOf(id) === i);
+              // Send in-app notifications
               recipientIds.forEach(rid => {
                 supabase.from("notifications").insert({
                   id: "N-" + Date.now() + "-" + Math.random().toString(36).slice(2),
@@ -1400,6 +1425,31 @@ export default function App() {
                   dev_id: dev.id, type: "dev", read: false, created_at: new Date().toISOString(),
                 });
               });
+              // Send email to team member + assigned user (not supplier, not all admins)
+              const emailKey = "emailSent_" + todayStr;
+              const emailSentIds = (() => { try { return JSON.parse(sessionStorage.getItem(emailKey) || "[]"); } catch { return []; } })();
+              const emailNotifId = dev.id + "_" + stepId + "_email_" + s.est_date;
+              if (!emailSentIds.includes(emailNotifId)) {
+                const statusMsg = daysOverdue === 0
+                  ? `Step "${stepLabel}" is due today`
+                  : `Step "${stepLabel}" is overdue by ${daysOverdue} day${daysOverdue !== 1 ? "s" : ""}`;
+                const emailRecipients = [dev.team_member_id, dev.assigned_user_id]
+                  .filter((id, i, arr) => id && arr.indexOf(id) === i);
+                emailRecipients.forEach(rid => {
+                  const user = uRows.find(u => u.id === rid);
+                  if (user?.email) {
+                    sendFollowUpEmail({
+                      to_email: user.email,
+                      to_name: user.full_name || "Team",
+                      dev_title: dev.title || "",
+                      factory_name: dev.factory_names?.[0] || "",
+                      step_name: stepLabel,
+                      status_message: statusMsg,
+                    });
+                  }
+                });
+                try { sessionStorage.setItem(emailKey, JSON.stringify([...emailSentIds, emailNotifId])); } catch {}
+              }
             });
           });
         });
