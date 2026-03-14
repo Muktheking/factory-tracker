@@ -1511,13 +1511,15 @@ export default function App() {
     const latestUpdate = d.updates?.[0];
     const latestUpdateDate = latestUpdate?.created_date ? new Date(latestUpdate.created_date) : null;
     const steps = latestUpdate?.production_steps || {};
-    return Object.values(steps).some(s => {
-      if (!s.est_date || s.completed) return false; // skip completed steps
+    const result = Object.values(steps).some(s => {
+      if (!s.est_date || s.completed) return false;
       const due = parseLocalDate(s.est_date);
       const today = getChinaToday();
-      if (due > today) return false; // not yet due
+      console.log("[needsFollowUp]", d.title, "step est_date:", s.est_date, "due:", due?.toISOString(), "today:", today?.toISOString(), "due>today:", due > today, "latestUpdateDate:", latestUpdateDate?.toISOString());
+      if (due > today) return false;
       return !latestUpdateDate || latestUpdateDate <= due;
     });
+    return result;
   });
 
   // Developments with target date within 7 days (or already overdue)
