@@ -1145,6 +1145,9 @@ export default function App() {
     if (k === "newMsgCount") return globalLang === "zh"
       ? `${d.count} 条新消息`
       : `${d.count} new message${d.count > 1 ? "s" : ""}`;
+    if (k === "devCompleted") return globalLang === "zh"
+      ? `${d.by || "团队"} 标记开发完成: "${d.title || "开发"}"`
+      : `${d.by || "Team"} marked "${d.title || "a development"}" as completed`;
     if (k === "devReopened") return globalLang === "zh"
       ? `${d.by || "供应商"} 重新开启了 "${d.title || "开发"}"`
       : `${d.by || "Supplier"} reopened "${d.title || "a development"}"` ;
@@ -1487,6 +1490,7 @@ export default function App() {
                       <button onClick={() => {
                         db.markAllNotifsRead(currentUser?.id);
                         setNotifications([]);
+                        setShowNotifs(false);
                       }} className="text-xs text-slate-400 hover:text-red-500">{t("clearAll")}</button>
                     )}
                   </div>
@@ -2913,23 +2917,6 @@ function DevDetailPage({ devId, devs, setDevs, factories, getFactory, getUser, o
   const isAdmin    = currentUser?.role === "admin";
   const isSupplier = currentUser?.role === "supplier";
 
-  // Notify supplier when admin/user opens this dev for the first time (tracking in memory only, not status history)
-  const viewedNotifSent = useRef(false);
-  useEffect(() => {
-    if (!dev || !currentUser || currentUser.role === "supplier" || currentUser.role === "viewer") return;
-    if (viewedNotifSent.current) return;
-    viewedNotifSent.current = true;
-    if (pushNotif) {
-      const supplierUser = users.find(u => u.role === "supplier" && dev.factory_ids?.includes(u.factory_id));
-      if (supplierUser) {
-        pushNotif(supplierUser.id, "devViewed", {
-          viewer: currentUser.full_name || "Team",
-          title: dev.title || "",
-        }, devId, "dev");
-      }
-    }
-  }, [devId]);
-
   // Unread messages: messages not sent by current user and not read by them
   const unreadCount = (dev.messages || []).filter(m =>
     m.sender_name !== currentUser?.full_name &&
@@ -2942,16 +2929,17 @@ function DevDetailPage({ devId, devs, setDevs, factories, getFactory, getUser, o
     await db.upsertDev({ ...dev, status, status_history: newHistory, updates: undefined, messages: undefined });
     setDevs((p) => p.map((d) => d.id === devId ? { ...d, status, status_history: newHistory } : d));
     showToast(`Status: ${DEV_STATUS_LABEL()[status]}`);
-    // Notify on reopen
-    if (status === "open" && pushNotifToMany) {
+    // Notify on reopen or complete
+    if ((status === "open" || status === "completed") && pushNotifToMany) {
       const recipientIds = [
         ...users.filter(u => u.role === "admin").map(u => u.id),
         dev.team_member_id,
         dev.assigned_user_id,
       ].filter(id => id && id !== currentUser?.id);
-      await pushNotifToMany(recipientIds, "devReopened", {
+      const msgKey = status === "completed" ? "devCompleted" : "devReopened";
+      await pushNotifToMany(recipientIds, msgKey, {
         title: dev.title || "",
-        by: currentUser?.full_name || "Supplier",
+        by: currentUser?.full_name || "Team",
       }, devId, "dev");
     }
   }
