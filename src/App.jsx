@@ -1266,6 +1266,9 @@ export default function App() {
     if (k === "devCompleted") return globalLang === "zh"
       ? `${d.by || "团队"} 标记开发完成: "${d.title || "开发"}"`
       : `${d.by || "Team"} marked "${d.title || "a development"}" as completed`;
+    if (k === "stepDone") return globalLang === "zh"
+      ? `${d.factory || "工厂"} 完成了 ${d.step || ""} · "${d.title || ""}"`
+      : `${d.factory || "Factory"} completed ${d.step || ""} · "${d.title || ""}"`;
     if (k === "stepDueToday") return globalLang === "zh"
       ? `⏰ 今日到期: ${d.factory || "工厂"} · ${d.step || ""} · "${d.title || ""}"`
       : `⏰ Due today: ${d.factory || "Factory"} · ${d.step || ""} · "${d.title || ""}"` ;
@@ -2218,32 +2221,6 @@ function VisitCard({ visit, onEdit, onDelete, onView, currentUser }) {
               )}
             </div>
           )}
-          {(() => {
-            const lu = dev.updates?.[0];
-            const steps = lu?.production_steps || {};
-            const activeSteps = Object.entries(steps).filter(([, s]) => !s.completed);
-            if (!activeSteps.length) return null;
-            const today = getChinaNow();
-            return (
-              <div className="mt-2 space-y-1">
-                {activeSteps.map(([id, s]) => {
-                  const step = PRODUCTION_STEPS.find(p => p.id === id);
-                  if (!step) return null;
-                  const diff = s.est_date ? Math.ceil((parseLocalDate(s.est_date) - today) / 86400000) : null;
-                  const isOverdue = diff !== null && diff < 0;
-                  const isToday = diff === 0;
-                  const timeLabel = diff === null ? null : isOverdue ? `Overdue ${Math.abs(diff)}d` : isToday ? "Due Today" : `${diff} Days Left`;
-                  return (
-                    <div key={id} className={`flex items-center gap-1.5 px-2 py-1 rounded-lg text-xs font-medium border ${isOverdue ? "bg-red-50 text-red-700 border-red-200" : isToday ? "bg-amber-50 text-amber-700 border-amber-200" : "bg-purple-50 text-purple-700 border-purple-100"}`}>
-                      <span>{step.icon}</span>
-                      <span className="font-semibold">{step.label}</span>
-                      {timeLabel && <><span className="opacity-40">·</span><span>{timeLabel}</span></>}
-                    </div>
-                  );
-                })}
-              </div>
-            );
-          })()}
           <div className="mt-3 flex flex-col sm:flex-row sm:justify-end gap-1.5 sm:gap-1">
             <div className="flex gap-1 justify-end">
               {canEdit && onEdit && <Btn variant="ghost" size="sm" onClick={onEdit}>{Icon.edit}</Btn>}
@@ -3335,6 +3312,23 @@ function DevDetailPage({ devId, devs, setDevs, factories, getFactory, getUser, o
         const full = await db.getDevs();
         setDevs(full);
         showToast("Step marked as done ✓");
+        // Notify admins + team member + assigned user
+        if (pushNotifToMany) {
+          const step = PRODUCTION_STEPS.find(p => p.id === stepId);
+          const stepLabel = step?.label || stepId;
+          const recipientIds = [
+            ...users.filter(u => u.role === "admin").map(u => u.id),
+            dev.team_member_id,
+            dev.assigned_user_id,
+          ].filter(id => id && id !== currentUser?.id);
+          if (recipientIds.length) {
+            await pushNotifToMany(recipientIds, "stepDone", {
+              factory: dev.factory_names?.[0] || currentUser?.factory_name || "Supplier",
+              title: dev.title || "",
+              step: stepLabel,
+            }, devId, "dev");
+          }
+        }
       }
     } else {
       setEditingStep({ update, stepId, stepData });
