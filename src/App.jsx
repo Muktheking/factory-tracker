@@ -3017,7 +3017,12 @@ function DevDetailPage({ devId, devs, setDevs, factories, getFactory, getUser, o
 
   async function saveUpdate(data) {
     const { mark_complete, ...updateData } = data;
-    const record = { ...updateData, id: genId("UPD"), development_id: devId, created_date: new Date().toISOString() };
+    // Sanitize empty strings to null for date fields (Supabase rejects "" for date type)
+    const sanitized = { ...updateData };
+    ["materials_arrival_date","estimated_finish_date"].forEach(k => {
+      if (sanitized[k] === "" || sanitized[k] === undefined) sanitized[k] = null;
+    });
+    const record = { ...sanitized, id: genId("UPD"), development_id: devId, created_date: new Date().toISOString() };
     const saved = await db.insertUpdate(record);
     if (saved) {
       // Add to status history
