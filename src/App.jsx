@@ -2929,18 +2929,32 @@ function DevDetailPage({ devId, devs, setDevs, factories, getFactory, getUser, o
     await db.upsertDev({ ...dev, status, status_history: newHistory, updates: undefined, messages: undefined });
     setDevs((p) => p.map((d) => d.id === devId ? { ...d, status, status_history: newHistory } : d));
     showToast(`Status: ${DEV_STATUS_LABEL()[status]}`);
-    // Notify admins + team member + assigned user on complete or reopen
-    if ((status === "completed" || status === "open") && pushNotifToMany) {
+    if (!pushNotifToMany) return;
+    if (status === "open") {
+      // Reopened by admin/user → notify supplier linked to this dev's factory
+      const supplierUser = users.find(u => u.role === "supplier" && dev.factory_ids?.includes(u.factory_id));
+      const recipientIds = [
+        supplierUser?.id,
+      ].filter(id => id && id !== currentUser?.id);
+      if (recipientIds.length) {
+        await pushNotifToMany(recipientIds, "devReopened", {
+          title: dev.title || "",
+          by: currentUser?.full_name || "Team",
+        }, devId, "dev");
+      }
+    } else if (status === "completed") {
+      // Marked complete by admin/user → notify admins + team member + assigned user
       const recipientIds = [
         ...users.filter(u => u.role === "admin").map(u => u.id),
         dev.team_member_id,
         dev.assigned_user_id,
       ].filter(id => id && id !== currentUser?.id);
-      const msgKey = status === "completed" ? "devCompleted" : "devReopened";
-      await pushNotifToMany(recipientIds, msgKey, {
-        title: dev.title || "",
-        by: currentUser?.full_name || "Team",
-      }, devId, "dev");
+      if (recipientIds.length) {
+        await pushNotifToMany(recipientIds, "devCompleted", {
+          title: dev.title || "",
+          by: currentUser?.full_name || "Team",
+        }, devId, "dev");
+      }
     }
   }
 
@@ -2975,11 +2989,13 @@ function DevDetailPage({ devId, devs, setDevs, factories, getFactory, getUser, o
           dev.team_member_id,
           dev.assigned_user_id,
         ].filter(id => id && id !== currentUser?.id);
-        await pushNotifToMany(recipientIds, "devUpdate", {
-          factory: dev.factory_names?.[0] || currentUser?.factory_name || "Supplier",
-          title: dev.title || "",
-          notes: (data.production_status || data.notes || "").slice(0, 40),
-        }, devId, "dev");
+        if (recipientIds.length) {
+          await pushNotifToMany(recipientIds, "devUpdate", {
+            factory: dev.factory_names?.[0] || currentUser?.factory_name || "Supplier",
+            title: dev.title || "",
+            notes: (data.production_status || data.notes || "").slice(0, 40),
+          }, devId, "dev");
+        }
       }
     }
     setShowUpdateForm(false);
