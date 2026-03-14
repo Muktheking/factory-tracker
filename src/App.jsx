@@ -3255,14 +3255,14 @@ function DevDetailPage({ devId, devs, setDevs, factories, getFactory, getUser, o
                         <a key={i} href={f.url} target="_blank" rel="noreferrer"
                           className="group flex flex-col items-center gap-1.5 p-2 bg-purple-50 border border-purple-100 rounded-xl hover:bg-purple-100 transition-colors">
                           {isImage
-                            ? <img src={f.url} alt={f.name} className="w-full h-16 object-cover rounded-lg border border-purple-100" onError={e => { e.target.style.display='none'; e.target.nextSibling.style.display='flex'; }} />
-                            : null}
-                          <div className={`w-full h-16 flex flex-col items-center justify-center rounded-lg gap-0.5 ${isPdf ? 'bg-red-50' : 'bg-purple-100'}`} style={{ display: isImage ? 'none' : 'flex' }}>
-                            {isPdf
-                              ? <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#ef4444" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
-                              : <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="text-purple-400"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>}
-                            <span className={`text-xs font-bold uppercase ${isPdf ? 'text-red-400' : 'text-purple-400'}`}>{isPdf ? 'PDF' : f.name.split('.').pop().toUpperCase()}</span>
-                          </div>
+                            ? <img src={f.url} alt={f.name} className="w-full h-16 object-cover rounded-lg border border-purple-100" />
+                            : isPdf
+                              ? <PdfThumbnail url={f.url} height={64} />
+                              : <div className="w-full h-16 flex flex-col items-center justify-center bg-purple-100 rounded-lg gap-0.5">
+                                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="text-purple-400"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                                  <span className="text-xs font-bold uppercase text-purple-400">{f.name.split('.').pop().toUpperCase()}</span>
+                                </div>
+                          }
                           <span className="text-xs text-purple-700 w-full text-center font-medium line-clamp-2 leading-tight">{f.name}</span>
                         </a>
                       );
@@ -3463,14 +3463,14 @@ function DevDetailPage({ devId, devs, setDevs, factories, getFactory, getUser, o
                             <a key={i} href={f.url} target="_blank" rel="noreferrer"
                               className="group flex flex-col items-center gap-2 p-3 bg-indigo-50 border border-indigo-100 rounded-xl hover:bg-indigo-100 transition-colors">
                               {isImage
-                                ? <img src={f.url} alt={f.name} className="w-full h-20 object-cover rounded-lg border border-indigo-100" onError={e => { e.target.style.display='none'; e.target.nextSibling.style.display='flex'; }} />
-                                : null}
-                              <div className={`w-full h-20 flex flex-col items-center justify-center rounded-lg gap-1 ${isPdf ? 'bg-red-50' : 'bg-indigo-100'}`} style={{ display: isImage ? 'none' : 'flex' }}>
-                                {isPdf
-                                  ? <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#ef4444" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
-                                  : <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="text-indigo-400"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>}
-                                <span className={`text-xs font-bold uppercase ${isPdf ? 'text-red-400' : 'text-indigo-400'}`}>{isPdf ? 'PDF' : f.name.split('.').pop().toUpperCase()}</span>
-                              </div>
+                                ? <img src={f.url} alt={f.name} className="w-full h-20 object-cover rounded-lg border border-indigo-100" />
+                                : isPdf
+                                  ? <PdfThumbnail url={f.url} height={80} />
+                                  : <div className="w-full h-20 flex flex-col items-center justify-center bg-indigo-100 rounded-lg gap-1">
+                                      <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="text-indigo-400"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                                      <span className="text-xs font-bold uppercase text-indigo-400">{f.name.split('.').pop().toUpperCase()}</span>
+                                    </div>
+                              }
                               <span className="text-xs text-indigo-700 w-full text-center font-medium line-clamp-2 leading-tight">{f.name}</span>
                               <span className="text-xs text-indigo-400 group-hover:text-indigo-600">Tap to open ↗</span>
                             </a>
@@ -3589,6 +3589,65 @@ function FactoryUpdateForm({ dev, onSave, onCancel }) {
           ✅ Submit & Mark Complete
         </Btn>
       </div>
+    </div>
+  );
+}
+
+function PdfThumbnail({ url, height = 80 }) {
+  const canvasRef = useRef(null);
+  const [status, setStatus] = useState("loading"); // loading | done | error
+
+  useEffect(() => {
+    let cancelled = false;
+    async function render() {
+      try {
+        if (!window.pdfjsLib) {
+          await new Promise((resolve, reject) => {
+            const script = document.createElement("script");
+            script.src = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js";
+            script.onload = resolve;
+            script.onerror = reject;
+            document.head.appendChild(script);
+          });
+          window.pdfjsLib.GlobalWorkerOptions.workerSrc =
+            "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+        }
+        const pdf = await window.pdfjsLib.getDocument(url).promise;
+        if (cancelled) return;
+        const page = await pdf.getPage(1);
+        if (cancelled) return;
+        const viewport = page.getViewport({ scale: 1 });
+        const scale = height / viewport.height;
+        const scaled = page.getViewport({ scale });
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+        canvas.height = scaled.height;
+        canvas.width = scaled.width;
+        await page.render({ canvasContext: canvas.getContext("2d"), viewport: scaled }).promise;
+        if (!cancelled) setStatus("done");
+      } catch {
+        if (!cancelled) setStatus("error");
+      }
+    }
+    render();
+    return () => { cancelled = true; };
+  }, [url]);
+
+  if (status === "error") return (
+    <div className="w-full flex flex-col items-center justify-center bg-red-50 rounded-lg gap-1" style={{ height }}>
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#ef4444" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+      <span className="text-xs font-bold text-red-400">PDF</span>
+    </div>
+  );
+
+  return (
+    <div className="relative w-full rounded-lg overflow-hidden bg-slate-100" style={{ height }}>
+      {status === "loading" && (
+        <div className="absolute inset-0 flex items-center justify-center">
+          <div className="w-5 h-5 border-2 border-purple-300 border-t-purple-600 rounded-full animate-spin" />
+        </div>
+      )}
+      <canvas ref={canvasRef} className="w-full h-full object-contain" style={{ display: status === "done" ? "block" : "none" }} />
     </div>
   );
 }
