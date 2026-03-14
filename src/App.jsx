@@ -1507,19 +1507,19 @@ export default function App() {
     if (d.status !== "open" && d.status !== "in_progress") return false;
     // Original rule: no updates after 3 days
     if (!d.updates?.length && daysAgo(d.created_date) >= 3) return true;
-    // New rule: any step with an overdue est_date and no newer update
+    // New rule: any step with an overdue est_date and no update submitted AFTER the due date
     const latestUpdate = d.updates?.[0];
-    const latestUpdateDate = latestUpdate?.created_date ? new Date(latestUpdate.created_date) : null;
     const steps = latestUpdate?.production_steps || {};
-    const result = Object.values(steps).some(s => {
+    return Object.values(steps).some(s => {
       if (!s.est_date || s.completed) return false;
       const due = parseLocalDate(s.est_date);
       const today = getChinaToday();
-      console.log("[needsFollowUp]", d.title, "step est_date:", s.est_date, "due:", due?.toISOString(), "today:", today?.toISOString(), "due>today:", due > today, "latestUpdateDate:", latestUpdateDate?.toISOString());
-      if (due > today) return false;
-      return !latestUpdateDate || latestUpdateDate <= due;
+      if (due > today) return false; // not yet due
+      // Check if any update was submitted strictly after the due date (next day or later)
+      const nextDayAfterDue = new Date(due.getTime() + 24 * 60 * 60 * 1000);
+      const hasNewerUpdate = d.updates?.some(u => u.created_date && new Date(u.created_date) >= nextDayAfterDue);
+      return !hasNewerUpdate;
     });
-    return result;
   });
 
   // Developments with target date within 7 days (or already overdue)
@@ -1894,7 +1894,7 @@ function DashboardPage({ visits, devs, factories, setPage, needsFollowUp, dueSoo
                   : recentDevs.map((d) => {
                     const _lu = d.updates?.[0]; const _tod = getChinaToday();
                     const nf = ((d.status === "open" || d.status === "in_progress") && (!d.updates || d.updates.length === 0) && daysAgo(d.created_date) >= 3) ||
-                      ((d.status === "open" || d.status === "in_progress") && Object.values(_lu?.production_steps || {}).some(s => { if (!s.est_date) return false; const due = parseLocalDate(s.est_date); return !s.completed && due <= _tod; }));
+                      ((d.status === "open" || d.status === "in_progress") && Object.values(_lu?.production_steps || {}).some(s => { if (!s.est_date) return false; const due = parseLocalDate(s.est_date); if (due > _tod) return false; const _nd = new Date(due.getTime() + 86400000); return !s.completed && !d.updates?.some(u => u.created_date && new Date(u.created_date) >= _nd); }));
                     return (
                       <Card key={d.id} className={`shadow-sm hover:shadow-md transition-all ${nf ? "border-l-4 border-l-orange-400" : ""}`}>
                         <div className="flex items-center gap-3 p-3">
@@ -1934,7 +1934,7 @@ function DashboardPage({ visits, devs, factories, setPage, needsFollowUp, dueSoo
                 : recentDevs.map((d) => {
                   const _lu2 = d.updates?.[0]; const _tod2 = getChinaToday();
                   const nf = ((d.status === "open" || d.status === "in_progress") && (!d.updates || d.updates.length === 0) && daysAgo(d.created_date) >= 3) ||
-                    ((d.status === "open" || d.status === "in_progress") && Object.values(_lu2?.production_steps || {}).some(s => { if (!s.est_date) return false; const due = parseLocalDate(s.est_date); return !s.completed && due <= _tod2; }));
+                    ((d.status === "open" || d.status === "in_progress") && Object.values(_lu2?.production_steps || {}).some(s => { if (!s.est_date) return false; const due = parseLocalDate(s.est_date); if (due > _tod2) return false; const _nd2 = new Date(due.getTime() + 86400000); return !s.completed && !d.updates?.some(u => u.created_date && new Date(u.created_date) >= _nd2); }));
                   return (
                     <Card key={d.id} className={`shadow-sm hover:shadow-md transition-all ${nf ? "border-l-4 border-l-orange-400" : ""}`}>
                       <div className="flex items-center gap-3 p-3">
@@ -2923,7 +2923,10 @@ function DevCard({ dev, onEdit, onDelete, onView, hasNewUpdate, hasBeenEdited })
     return Object.values(steps).some(s => {
       if (!s.est_date || s.completed) return false;
       const due = parseLocalDate(s.est_date);
-      return due <= today && (!latestUpdateDate || latestUpdateDate <= due);
+      if (due > today) return false;
+      const nextDay = new Date(due.getTime() + 24 * 60 * 60 * 1000);
+      const hasNewerUpdate = dev.updates?.some(u => u.created_date && new Date(u.created_date) >= nextDay);
+      return !hasNewerUpdate;
     });
   })();
   const needsFollowUp = ((dev.status === "open" || dev.status === "in_progress") && (!dev.updates || dev.updates.length === 0) && daysAgo(dev.created_date) >= 3) || hasOverdueStep;
