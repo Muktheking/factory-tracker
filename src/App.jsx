@@ -393,16 +393,37 @@ const ROLE_CSS  = { admin: "bg-purple-100 text-purple-700", user: "bg-blue-100 t
 function genId(prefix) {
   return prefix + Date.now().toString(36).toUpperCase().slice(-4) + Math.random().toString(36).slice(2,5).toUpperCase();
 }
+// ── China Time (UTC+8) helpers — app is China-only ──────────────────────────
+function getChinaNow() {
+  // Returns current time shifted to UTC+8
+  return new Date(new Date().getTime() + 8 * 60 * 60 * 1000);
+}
+function getChinaToday() {
+  // Returns UTC+8 midnight as a Date object for comparisons
+  const cn = getChinaNow();
+  return new Date(Date.UTC(cn.getUTCFullYear(), cn.getUTCMonth(), cn.getUTCDate()));
+}
+function getChinaTodayStr() {
+  // Returns today's date string in UTC+8 as YYYY-MM-DD
+  const cn = getChinaNow();
+  return cn.toISOString().slice(0, 10);
+}
+function parseLocalDate(str) {
+  // Parse YYYY-MM-DD as UTC+8 midnight
+  if (!str) return null;
+  const [y, m, d] = str.split("-").map(Number);
+  return new Date(Date.UTC(y, m - 1, d)); // stored as UTC midnight = China date
+}
 function daysLeft(dateStr) {
   if (!dateStr) return null;
-  const diff = Math.ceil((new Date(dateStr) - new Date()) / 86400000);
+  const diff = Math.ceil((parseLocalDate(dateStr) - getChinaNow()) / 86400000);
   if (diff < 0) return `Overdue by ${Math.abs(diff)} Day${Math.abs(diff) !== 1 ? "s" : ""}`;
   if (diff === 0) return "Due Today";
   return `${diff} Day${diff !== 1 ? "s" : ""} Left`;
 }
 function daysLeftShort(dateStr) {
   if (!dateStr) return null;
-  const diff = Math.ceil((new Date(dateStr) - new Date()) / 86400000);
+  const diff = Math.ceil((parseLocalDate(dateStr) - getChinaNow()) / 86400000);
   if (diff < 0) return `Overdue ${Math.abs(diff)}d`;
   if (diff === 0) return "Due Today";
   return `${diff} Days Left`;
@@ -668,7 +689,7 @@ function SlideshowViewer({ visits, devs, onSignOut }) {
 
   // Stats for dashboard screen
   const totalVisits = visits.length;
-  const thisMonth = visits.filter(v => { const d = new Date(v.visit_date); const n = new Date(); return d.getMonth() === n.getMonth() && d.getFullYear() === n.getFullYear(); }).length;
+  const thisMonth = visits.filter(v => { const d = new Date(v.visit_date); const n = getChinaNow(); return d.getMonth() === n.getMonth() && d.getFullYear() === n.getFullYear(); }).length;
   const activeDevs = devs?.filter(d => d.status === "open" || d.status === "in_progress").length || 0;
   const recentVisits = sorted.slice(0, 8);
 
@@ -1344,7 +1365,7 @@ export default function App() {
       db.getDevs().then(newDevs => {
         setDevs(newDevs);
         if (!currentUserRef.current || currentUserRef.current.role === "viewer") return;
-        const today = new Date(); today.setHours(0,0,0,0);
+        const today = getChinaToday();
         const todayStr = today.toISOString().slice(0,10);
         const sentKey = "stepNotifSent_" + todayStr;
         const sentIds = (() => { try { return JSON.parse(sessionStorage.getItem(sentKey) || "[]"); } catch { return []; } })();
@@ -1355,7 +1376,7 @@ export default function App() {
           if (!latestUpdate?.production_steps) return;
           Object.entries(latestUpdate.production_steps).forEach(([stepId, s]) => {
             if (!s.est_date) return;
-            const due = new Date(s.est_date); due.setHours(0,0,0,0);
+            const due = parseLocalDate(s.est_date);
             const daysOverdue = Math.floor((today - due) / 86400000);
             if (daysOverdue < 0) return;
             const notifId = dev.id + "_" + stepId + "_" + s.est_date;
@@ -1442,8 +1463,8 @@ export default function App() {
     const steps = latestUpdate?.production_steps || {};
     return Object.values(steps).some(s => {
       if (!s.est_date || s.completed) return false; // skip completed steps
-      const due = new Date(s.est_date); due.setHours(0,0,0,0);
-      const today = new Date(); today.setHours(0,0,0,0);
+      const due = parseLocalDate(s.est_date);
+      const today = getChinaToday();
       if (due > today) return false; // not yet due
       return !latestUpdateDate || latestUpdateDate <= due;
     });
@@ -1453,7 +1474,7 @@ export default function App() {
   const dueSoon = devs.filter((d) => {
     if (!d.internal_estimated_date) return false;
     if (d.status === "completed" || d.status === "cancelled") return false;
-    const daysLeft = Math.ceil((new Date(d.internal_estimated_date) - new Date()) / 86400000);
+    const daysLeft = Math.ceil((new Date(d.internal_estimated_date) - getChinaNow()) / 86400000);
     return daysLeft <= 7;
   }).sort((a, b) => new Date(a.internal_estimated_date) - new Date(b.internal_estimated_date));
 
@@ -1754,7 +1775,7 @@ function DashboardPage({ visits, devs, factories, setPage, needsFollowUp, dueSoo
               <span className="text-sm font-semibold text-red-800">{dueSoon.length} development{dueSoon.length > 1 ? "s" : ""} due within 7 days</span>
             </div>
             {dueSoon.map((d) => {
-              const daysLeft = Math.ceil((new Date(d.internal_estimated_date) - new Date()) / 86400000);
+              const daysLeft = Math.ceil((new Date(d.internal_estimated_date) - getChinaNow()) / 86400000);
               const overdue  = daysLeft < 0;
               return (
                 <div key={d.id} onClick={() => onViewDev(d.id)}
@@ -1819,9 +1840,9 @@ function DashboardPage({ visits, devs, factories, setPage, needsFollowUp, dueSoo
               <div className="space-y-3">
                 {recentDevs.length === 0 ? <p className="text-slate-400 text-sm text-center py-8">{t("noDevs")}</p>
                   : recentDevs.map((d) => {
-                    const _lu = d.updates?.[0]; const _tod = new Date(); _tod.setHours(0,0,0,0);
+                    const _lu = d.updates?.[0]; const _tod = getChinaToday();
                     const nf = ((d.status === "open" || d.status === "in_progress") && (!d.updates || d.updates.length === 0) && daysAgo(d.created_date) >= 3) ||
-                      ((d.status === "open" || d.status === "in_progress") && Object.values(_lu?.production_steps || {}).some(s => { if (!s.est_date) return false; const due = new Date(s.est_date); due.setHours(0,0,0,0); return !s.completed && due <= _tod; }));
+                      ((d.status === "open" || d.status === "in_progress") && Object.values(_lu?.production_steps || {}).some(s => { if (!s.est_date) return false; const due = parseLocalDate(s.est_date); return !s.completed && due <= _tod; }));
                     return (
                       <Card key={d.id} className={`shadow-sm hover:shadow-md transition-all ${nf ? "border-l-4 border-l-orange-400" : ""}`}>
                         <div className="flex items-center gap-3 p-3">
@@ -1859,9 +1880,9 @@ function DashboardPage({ visits, devs, factories, setPage, needsFollowUp, dueSoo
             <div className="space-y-3">
               {recentDevs.length === 0 ? <p className="text-slate-400 text-sm text-center py-8">{t("noDevs")}</p>
                 : recentDevs.map((d) => {
-                  const _lu2 = d.updates?.[0]; const _tod2 = new Date(); _tod2.setHours(0,0,0,0);
+                  const _lu2 = d.updates?.[0]; const _tod2 = getChinaToday();
                   const nf = ((d.status === "open" || d.status === "in_progress") && (!d.updates || d.updates.length === 0) && daysAgo(d.created_date) >= 3) ||
-                    ((d.status === "open" || d.status === "in_progress") && Object.values(_lu2?.production_steps || {}).some(s => { if (!s.est_date) return false; const due = new Date(s.est_date); due.setHours(0,0,0,0); return !s.completed && due <= _tod2; }));
+                    ((d.status === "open" || d.status === "in_progress") && Object.values(_lu2?.production_steps || {}).some(s => { if (!s.est_date) return false; const due = parseLocalDate(s.est_date); return !s.completed && due <= _tod2; }));
                   return (
                     <Card key={d.id} className={`shadow-sm hover:shadow-md transition-all ${nf ? "border-l-4 border-l-orange-400" : ""}`}>
                       <div className="flex items-center gap-3 p-3">
@@ -1916,7 +1937,7 @@ function VisitsPage({ visits, setVisits, factories, currentUser, onView, showToa
   function matchesTime(v) {
     if (timeFilter === "all") return true;
     const d = new Date(v.visit_date);
-    const now = new Date();
+    const now = getChinaNow();
     if (timeFilter === "today") {
       return d.toDateString() === now.toDateString();
     }
@@ -1942,7 +1963,7 @@ function VisitsPage({ visits, setVisits, factories, currentUser, onView, showToa
 
   // Stats based on factory filter
   const statsTotal = factoryFiltered.length;
-  const statsToday = factoryFiltered.filter(v => new Date(v.visit_date).toDateString() === new Date().toDateString()).length;
+  const statsToday = factoryFiltered.filter(v => new Date(v.visit_date).toDateString() === getChinaNow().toDateString()).length;
   const statsWeek  = factoryFiltered.filter(v => daysAgo(v.visit_date) <= 7).length;
   const statsFactories = [...new Set(factoryFiltered.map(v => v.factory_id))].length;
 
@@ -2150,13 +2171,13 @@ function VisitCard({ visit, onEdit, onDelete, onView, currentUser }) {
             const steps = lu?.production_steps || {};
             const activeSteps = Object.entries(steps).filter(([, s]) => !s.completed);
             if (!activeSteps.length) return null;
-            const today = new Date();
+            const today = getChinaNow();
             return (
               <div className="mt-2 space-y-1">
                 {activeSteps.map(([id, s]) => {
                   const step = PRODUCTION_STEPS.find(p => p.id === id);
                   if (!step) return null;
-                  const diff = s.est_date ? Math.ceil((new Date(s.est_date) - today) / 86400000) : null;
+                  const diff = s.est_date ? Math.ceil((parseLocalDate(s.est_date) - today) / 86400000) : null;
                   const isOverdue = diff !== null && diff < 0;
                   const isToday = diff === 0;
                   const timeLabel = diff === null ? null : isOverdue ? `Overdue ${Math.abs(diff)}d` : isToday ? "Due Today" : `${diff} Days Left`;
@@ -2846,10 +2867,10 @@ function DevCard({ dev, onEdit, onDelete, onView, hasNewUpdate, hasBeenEdited })
   const hasOverdueStep = (() => {
     const steps = latestUpdate?.production_steps || {};
     const latestUpdateDate = latestUpdate?.created_date ? new Date(latestUpdate.created_date) : null;
-    const today = new Date(); today.setHours(0,0,0,0);
+    const today = getChinaToday();
     return Object.values(steps).some(s => {
       if (!s.est_date || s.completed) return false;
-      const due = new Date(s.est_date); due.setHours(0,0,0,0);
+      const due = parseLocalDate(s.est_date);
       return due <= today && (!latestUpdateDate || latestUpdateDate <= due);
     });
   })();
@@ -2870,7 +2891,7 @@ function DevCard({ dev, onEdit, onDelete, onView, hasNewUpdate, hasBeenEdited })
   const targetDate = dev.internal_estimated_date || null;
 
   // Is target date overdue?
-  const targetOverdue = targetDate && new Date(targetDate) < new Date() && !isCompleted;
+  const targetOverdue = targetDate && new Date(targetDate) < getChinaNow() && !isCompleted;
 
   return (
     <Card className={`shadow-sm hover:shadow-lg transition-all overflow-hidden ${needsFollowUp ? "border-t-4 border-t-orange-400 sm:border-t-0 sm:border-l-4 sm:border-l-orange-400" : ""}`}>
@@ -2940,13 +2961,13 @@ function DevCard({ dev, onEdit, onDelete, onView, hasNewUpdate, hasBeenEdited })
             const steps = lu?.production_steps || {};
             const activeSteps = Object.entries(steps).filter(([, s]) => !s.completed);
             if (!activeSteps.length) return null;
-            const today = new Date();
+            const today = getChinaNow();
             return (
               <div className="mt-2 space-y-1">
                 {activeSteps.map(([id, s]) => {
                   const step = PRODUCTION_STEPS.find(p => p.id === id);
                   if (!step) return null;
-                  const diff = s.est_date ? Math.ceil((new Date(s.est_date) - today) / 86400000) : null;
+                  const diff = s.est_date ? Math.ceil((parseLocalDate(s.est_date) - today) / 86400000) : null;
                   const isOverdue = diff !== null && diff < 0;
                   const isToday = diff === 0;
                   const timeLabel = diff === null ? null : isOverdue ? `Overdue ${Math.abs(diff)}d` : isToday ? "Due Today" : `${diff} Days Left`;
@@ -3302,7 +3323,7 @@ function DevDetailPage({ devId, devs, setDevs, factories, getFactory, getUser, o
             const step = PRODUCTION_STEPS.find(p => p.id === id);
             const label = step?.label || id;
             if (s.est_date) {
-              const days = Math.ceil((new Date(s.est_date) - new Date()) / 86400000);
+              const days = Math.ceil((parseLocalDate(s.est_date) - getChinaNow()) / 86400000);
               if (days > 0) return label + " (" + days + " Day" + (days !== 1 ? "s" : "") + " Left)";
               if (days === 0) return label + " (Due Today)";
               return label;
@@ -3730,7 +3751,7 @@ function DevDetailPage({ devId, devs, setDevs, factories, getFactory, getUser, o
 
 function FactoryUpdateForm({ dev, onSave, onCancel }) {
   const isFirstUpdate = !dev.updates?.length;
-  const today = new Date().toISOString().slice(0, 10);
+  const today = getChinaTodayStr();
   const [form, setForm] = useState({
     factory_id: dev.factory_ids?.[0] || "", factory_name: dev.factory_names?.[0] || "",
     type: "progress", production_steps: {}, estimated_finish_date: "",
@@ -3992,8 +4013,8 @@ function UpdateCard({ update, isSupplier, onEditStep }) {
                 const step = PRODUCTION_STEPS.find(p => p.id === id);
                 if (!step) return null;
                 const dl = daysLeft(s.est_date);
-                const isOverdue = s.est_date && Math.ceil((new Date(s.est_date) - new Date()) / 86400000) < 0;
-                const isDueToday = s.est_date && Math.ceil((new Date(s.est_date) - new Date()) / 86400000) === 0;
+                const isOverdue = s.est_date && Math.ceil((parseLocalDate(s.est_date) - getChinaNow()) / 86400000) < 0;
+                const isDueToday = s.est_date && Math.ceil((parseLocalDate(s.est_date) - getChinaNow()) / 86400000) === 0;
                 const isDone = s.completed;
                 return (
                   <div key={id} className={`rounded-lg border px-3 py-2 ${isDone ? "bg-green-50 border-green-200" : isOverdue ? "bg-red-50 border-red-200" : isDueToday ? "bg-amber-50 border-amber-200" : "bg-purple-50 border-purple-100"}`}>
