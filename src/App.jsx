@@ -3204,12 +3204,7 @@ function DevDetailPage({ devId, devs, setDevs, factories, getFactory, getUser, o
                 </Btn>
               )}
               {isAdmin && (
-                <>
-                  <Btn variant="white" onClick={() => setShowEdit((s) => !s)}>{Icon.edit} {t("edit")}</Btn>
-                  <Select value={dev.status} onChange={changeStatus} className="h-10 w-36 bg-white/10 border-white/20 text-white text-sm rounded-xl">
-                    {Object.entries(DEV_STATUS_LABEL()).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-                  </Select>
-                </>
+                <Btn variant="white" onClick={() => setShowEdit((s) => !s)}>{Icon.edit} {t("edit")}</Btn>
               )}
             </div>
           </div>
@@ -3241,35 +3236,7 @@ function DevDetailPage({ devId, devs, setDevs, factories, getFactory, getUser, o
                   </div>
                 </Card>
               )}
-              {dev.artwork_files?.length > 0 && (
-                <Card className="shadow-sm p-4">
-                  <h3 className="font-semibold text-slate-800 mb-3 text-sm flex items-center gap-2">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-purple-500"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
-                    Artwork Files ({dev.artwork_files.length})
-                  </h3>
-                  <div className="grid grid-cols-3 gap-2">
-                    {dev.artwork_files.map((f, i) => {
-                      const isImage = /\.(png|jpg|jpeg|gif|webp|svg)$/i.test(f.name);
-                      const isPdf = /\.pdf$/i.test(f.name);
-                      return (
-                        <a key={i} href={f.url} target="_blank" rel="noreferrer"
-                          className="group flex flex-col items-center gap-1.5 p-2 bg-purple-50 border border-purple-100 rounded-xl hover:bg-purple-100 transition-colors">
-                          {isImage
-                            ? <img src={f.url} alt={f.name} className="w-full h-16 object-cover rounded-lg border border-purple-100" />
-                            : isPdf
-                              ? <PdfThumbnail url={f.url} height={64} />
-                              : <div className="w-full h-16 flex flex-col items-center justify-center bg-purple-100 rounded-lg gap-0.5">
-                                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="text-purple-400"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
-                                  <span className="text-xs font-bold uppercase text-purple-400">{f.name.split('.').pop().toUpperCase()}</span>
-                                </div>
-                          }
-                          <span className="text-xs text-purple-700 w-full text-center font-medium line-clamp-2 leading-tight">{f.name}</span>
-                        </a>
-                      );
-                    })}
-                  </div>
-                </Card>
-              )}
+
               {lightbox && (
                 <div className="fixed inset-0 z-50 bg-black/90 flex items-center justify-center p-4" onClick={() => setLightbox(null)}>
                   <img src={lightbox} alt="" className="max-w-full max-h-full object-contain rounded-xl shadow-2xl" onClick={e => e.stopPropagation()} />
@@ -3438,6 +3405,42 @@ function DevDetailPage({ devId, devs, setDevs, factories, getFactory, getUser, o
                       <div><label className="text-xs text-amber-700 uppercase tracking-wide font-medium">Internal Notes</label>
                         <p className="text-sm text-amber-900 mt-0.5 whitespace-pre-wrap">{dev.internal_notes}</p></div>
                     )}
+                  </div>
+                </Card>
+              )}
+              {dev.special_remarks && (
+                <Card className="shadow-sm p-5 border-l-4 border-l-purple-400">
+                  <h3 className="font-semibold text-purple-800 border-b border-purple-100 pb-2 mb-3 text-sm uppercase tracking-wide">📋 Special Remarks</h3>
+                  <p className="text-sm text-slate-700 whitespace-pre-wrap">{dev.special_remarks}</p>
+                </Card>
+              )}
+              {dev.artwork_files?.length > 0 && (
+                <Card className="shadow-sm p-5 border-l-4 border-l-indigo-400">
+                  <h3 className="font-semibold text-indigo-800 border-b border-indigo-100 pb-2 mb-3 text-sm uppercase tracking-wide flex items-center gap-2">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                    Artwork Files ({dev.artwork_files.length})
+                  </h3>
+                  <div className="grid grid-cols-2 gap-2">
+                    {dev.artwork_files.map((f, i) => {
+                      const isImage = /\.(png|jpg|jpeg|gif|webp|svg)$/i.test(f.name);
+                      const isPdf = /\.pdf$/i.test(f.name);
+                      return (
+                        <a key={i} href={f.url} target="_blank" rel="noreferrer"
+                          className="group flex flex-col items-center gap-1.5 p-2 bg-indigo-50 border border-indigo-100 rounded-xl hover:bg-indigo-100 transition-colors">
+                          {isImage
+                            ? <img src={f.url} alt={f.name} className="w-full h-16 object-cover rounded-lg border border-indigo-100" />
+                            : isPdf
+                              ? <PdfThumbnail url={f.url} height={64} />
+                              : <div className="w-full h-16 flex flex-col items-center justify-center bg-indigo-100 rounded-lg gap-0.5">
+                                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="text-indigo-400"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                                  <span className="text-xs font-bold uppercase text-indigo-400">{f.name.split('.').pop().toUpperCase()}</span>
+                                </div>
+                          }
+                          <span className="text-xs text-indigo-700 w-full text-center font-medium line-clamp-2 leading-tight">{f.name}</span>
+                          <span className="text-xs text-indigo-400 group-hover:text-indigo-600">Tap to open ↗</span>
+                        </a>
+                      );
+                    })}
                   </div>
                 </Card>
               )}
