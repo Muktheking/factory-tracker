@@ -2983,19 +2983,30 @@ function DevDetailPage({ devId, devs, setDevs, factories, getFactory, getUser, o
         showToast("Update submitted");
       }
       // Notify admin + team member + assigned user
+      console.log("[saveUpdate] pushNotifToMany:", !!pushNotifToMany);
+      console.log("[saveUpdate] users:", users.length, users.map(u => ({id: u.id, role: u.role, name: u.full_name})));
+      console.log("[saveUpdate] dev.team_member_id:", dev.team_member_id);
+      console.log("[saveUpdate] dev.assigned_user_id:", dev.assigned_user_id);
+      console.log("[saveUpdate] currentUser.id:", currentUser?.id);
       if (pushNotifToMany) {
         const recipientIds = [
           ...users.filter(u => u.role === "admin").map(u => u.id),
           dev.team_member_id,
           dev.assigned_user_id,
         ].filter(id => id && id !== currentUser?.id);
+        console.log("[saveUpdate] recipientIds:", recipientIds);
         if (recipientIds.length) {
           await pushNotifToMany(recipientIds, "devUpdate", {
             factory: dev.factory_names?.[0] || currentUser?.factory_name || "Supplier",
             title: dev.title || "",
             notes: (data.production_status || data.notes || "").slice(0, 40),
           }, devId, "dev");
+          console.log("[saveUpdate] notification sent!");
+        } else {
+          console.log("[saveUpdate] NO recipients - notification not sent!");
         }
+      } else {
+        console.log("[saveUpdate] pushNotifToMany is undefined - notification not sent!");
       }
     }
     setShowUpdateForm(false);
