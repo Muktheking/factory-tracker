@@ -3127,7 +3127,7 @@ function DevDetailPage({ devId, devs, setDevs, factories, getFactory, getUser, o
             }
             return label;
           });
-          return stepLabels.length > 0 ? stepLabels.join(" · ") : `Update submitted${data.notes ? \`: \${data.notes.slice(0, 40)}\` : ""}`;
+          return stepLabels.length > 0 ? stepLabels.join(" · ") : ("Update submitted" + (data.notes ? ": " + data.notes.slice(0, 40) : ""));
         })(),
       };
       const newHistory = [...(dev.status_history || []), historyEntry];
