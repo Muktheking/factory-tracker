@@ -1441,11 +1441,10 @@ export default function App() {
     const latestUpdateDate = latestUpdate?.created_date ? new Date(latestUpdate.created_date) : null;
     const steps = latestUpdate?.production_steps || {};
     return Object.values(steps).some(s => {
-      if (!s.est_date) return false;
-      const due = new Date(s.est_date);
+      if (!s.est_date || s.completed) return false; // skip completed steps
+      const due = new Date(s.est_date); due.setHours(0,0,0,0);
       const today = new Date(); today.setHours(0,0,0,0);
       if (due > today) return false; // not yet due
-      // Only flag if no newer update after the due date
       return !latestUpdateDate || latestUpdateDate <= due;
     });
   });
@@ -1822,7 +1821,7 @@ function DashboardPage({ visits, devs, factories, setPage, needsFollowUp, dueSoo
                   : recentDevs.map((d) => {
                     const _lu = d.updates?.[0]; const _tod = new Date(); _tod.setHours(0,0,0,0);
                     const nf = ((d.status === "open" || d.status === "in_progress") && (!d.updates || d.updates.length === 0) && daysAgo(d.created_date) >= 3) ||
-                      ((d.status === "open" || d.status === "in_progress") && Object.values(_lu?.production_steps || {}).some(s => { if (!s.est_date) return false; const due = new Date(s.est_date); due.setHours(0,0,0,0); return due <= _tod; }));
+                      ((d.status === "open" || d.status === "in_progress") && Object.values(_lu?.production_steps || {}).some(s => { if (!s.est_date) return false; const due = new Date(s.est_date); due.setHours(0,0,0,0); return !s.completed && due <= _tod; }));
                     return (
                       <Card key={d.id} className={`shadow-sm hover:shadow-md transition-all ${nf ? "border-l-4 border-l-orange-400" : ""}`}>
                         <div className="flex items-center gap-3 p-3">
@@ -1862,7 +1861,7 @@ function DashboardPage({ visits, devs, factories, setPage, needsFollowUp, dueSoo
                 : recentDevs.map((d) => {
                   const _lu2 = d.updates?.[0]; const _tod2 = new Date(); _tod2.setHours(0,0,0,0);
                   const nf = ((d.status === "open" || d.status === "in_progress") && (!d.updates || d.updates.length === 0) && daysAgo(d.created_date) >= 3) ||
-                    ((d.status === "open" || d.status === "in_progress") && Object.values(_lu2?.production_steps || {}).some(s => { if (!s.est_date) return false; const due = new Date(s.est_date); due.setHours(0,0,0,0); return due <= _tod2; }));
+                    ((d.status === "open" || d.status === "in_progress") && Object.values(_lu2?.production_steps || {}).some(s => { if (!s.est_date) return false; const due = new Date(s.est_date); due.setHours(0,0,0,0); return !s.completed && due <= _tod2; }));
                   return (
                     <Card key={d.id} className={`shadow-sm hover:shadow-md transition-all ${nf ? "border-l-4 border-l-orange-400" : ""}`}>
                       <div className="flex items-center gap-3 p-3">
@@ -2149,30 +2148,26 @@ function VisitCard({ visit, onEdit, onDelete, onView, currentUser }) {
           {(() => {
             const lu = dev.updates?.[0];
             const steps = lu?.production_steps || {};
-            const activeSteps = Object.entries(steps).filter(([, s]) => !s.completed && s.est_date);
+            const activeSteps = Object.entries(steps).filter(([, s]) => !s.completed);
             if (!activeSteps.length) return null;
             const today = new Date();
-            // Find the most urgent step (soonest due, or most overdue)
-            const sorted = activeSteps.sort(([,a],[,b]) => new Date(a.est_date) - new Date(b.est_date));
             return (
-              <div className="mt-2 flex flex-wrap gap-1.5">
-                {sorted.slice(0, 2).map(([id, s]) => {
+              <div className="mt-2 space-y-1">
+                {activeSteps.map(([id, s]) => {
                   const step = PRODUCTION_STEPS.find(p => p.id === id);
                   if (!step) return null;
-                  const diff = Math.ceil((new Date(s.est_date) - today) / 86400000);
-                  const isOverdue = diff < 0;
+                  const diff = s.est_date ? Math.ceil((new Date(s.est_date) - today) / 86400000) : null;
+                  const isOverdue = diff !== null && diff < 0;
                   const isToday = diff === 0;
-                  const label = isOverdue ? `Overdue ${Math.abs(diff)}d` : isToday ? "Due Today" : `${diff} Days Left`;
+                  const timeLabel = diff === null ? null : isOverdue ? `Overdue ${Math.abs(diff)}d` : isToday ? "Due Today" : `${diff} Days Left`;
                   return (
-                    <div key={id} className={`flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-medium border ${isOverdue ? "bg-red-50 text-red-700 border-red-200" : isToday ? "bg-amber-50 text-amber-700 border-amber-200" : "bg-purple-50 text-purple-700 border-purple-100"}`}>
+                    <div key={id} className={`flex items-center gap-1.5 px-2 py-1 rounded-lg text-xs font-medium border ${isOverdue ? "bg-red-50 text-red-700 border-red-200" : isToday ? "bg-amber-50 text-amber-700 border-amber-200" : "bg-purple-50 text-purple-700 border-purple-100"}`}>
                       <span>{step.icon}</span>
-                      <span>{step.label}</span>
-                      <span className="opacity-60">·</span>
-                      <span>{label}</span>
+                      <span className="font-semibold">{step.label}</span>
+                      {timeLabel && <><span className="opacity-40">·</span><span>{timeLabel}</span></>}
                     </div>
                   );
                 })}
-                {sorted.length > 2 && <span className="text-xs text-slate-400 self-center">+{sorted.length - 2} more</span>}
               </div>
             );
           })()}
@@ -2853,7 +2848,7 @@ function DevCard({ dev, onEdit, onDelete, onView, hasNewUpdate, hasBeenEdited })
     const latestUpdateDate = latestUpdate?.created_date ? new Date(latestUpdate.created_date) : null;
     const today = new Date(); today.setHours(0,0,0,0);
     return Object.values(steps).some(s => {
-      if (!s.est_date) return false;
+      if (!s.est_date || s.completed) return false;
       const due = new Date(s.est_date); due.setHours(0,0,0,0);
       return due <= today && (!latestUpdateDate || latestUpdateDate <= due);
     });
@@ -2943,30 +2938,26 @@ function DevCard({ dev, onEdit, onDelete, onView, hasNewUpdate, hasBeenEdited })
           {(() => {
             const lu = dev.updates?.[0];
             const steps = lu?.production_steps || {};
-            const activeSteps = Object.entries(steps).filter(([, s]) => !s.completed && s.est_date);
+            const activeSteps = Object.entries(steps).filter(([, s]) => !s.completed);
             if (!activeSteps.length) return null;
             const today = new Date();
-            // Find the most urgent step (soonest due, or most overdue)
-            const sorted = activeSteps.sort(([,a],[,b]) => new Date(a.est_date) - new Date(b.est_date));
             return (
-              <div className="mt-2 flex flex-wrap gap-1.5">
-                {sorted.slice(0, 2).map(([id, s]) => {
+              <div className="mt-2 space-y-1">
+                {activeSteps.map(([id, s]) => {
                   const step = PRODUCTION_STEPS.find(p => p.id === id);
                   if (!step) return null;
-                  const diff = Math.ceil((new Date(s.est_date) - today) / 86400000);
-                  const isOverdue = diff < 0;
+                  const diff = s.est_date ? Math.ceil((new Date(s.est_date) - today) / 86400000) : null;
+                  const isOverdue = diff !== null && diff < 0;
                   const isToday = diff === 0;
-                  const label = isOverdue ? `Overdue ${Math.abs(diff)}d` : isToday ? "Due Today" : `${diff} Days Left`;
+                  const timeLabel = diff === null ? null : isOverdue ? `Overdue ${Math.abs(diff)}d` : isToday ? "Due Today" : `${diff} Days Left`;
                   return (
-                    <div key={id} className={`flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-medium border ${isOverdue ? "bg-red-50 text-red-700 border-red-200" : isToday ? "bg-amber-50 text-amber-700 border-amber-200" : "bg-purple-50 text-purple-700 border-purple-100"}`}>
+                    <div key={id} className={`flex items-center gap-1.5 px-2 py-1 rounded-lg text-xs font-medium border ${isOverdue ? "bg-red-50 text-red-700 border-red-200" : isToday ? "bg-amber-50 text-amber-700 border-amber-200" : "bg-purple-50 text-purple-700 border-purple-100"}`}>
                       <span>{step.icon}</span>
-                      <span>{step.label}</span>
-                      <span className="opacity-60">·</span>
-                      <span>{label}</span>
+                      <span className="font-semibold">{step.label}</span>
+                      {timeLabel && <><span className="opacity-40">·</span><span>{timeLabel}</span></>}
                     </div>
                   );
                 })}
-                {sorted.length > 2 && <span className="text-xs text-slate-400 self-center">+{sorted.length - 2} more</span>}
               </div>
             );
           })()}
