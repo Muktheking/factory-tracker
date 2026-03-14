@@ -324,7 +324,7 @@ const db = {
     const allowed = ["id","development_id","factory_id","factory_name","type",
       "materials_status","materials_arrival_date","estimated_finish_date",
       "supplier_price","production_status","notes","progress_pictures",
-      "submitted_by","created_date"];
+      "created_date"];
     const record = Object.fromEntries(Object.entries(u).filter(([k]) => allowed.includes(k)));
     const { data, error } = await supabase.from("development_updates").insert(record).select().single();
     if (error) console.error("insertUpdate failed:", error.message, record);
@@ -3017,7 +3017,7 @@ function DevDetailPage({ devId, devs, setDevs, factories, getFactory, getUser, o
 
   async function saveUpdate(data) {
     const { mark_complete, ...updateData } = data;
-    const record = { ...updateData, id: genId("UPD"), development_id: devId, created_date: new Date().toISOString(), submitted_by: currentUser?.full_name || "" };
+    const record = { ...updateData, id: genId("UPD"), development_id: devId, created_date: new Date().toISOString() };
     const saved = await db.insertUpdate(record);
     if (saved) {
       // Add to status history
@@ -3523,9 +3523,9 @@ function DevChat({ devId, dev, setDevs, currentUser, users = [], pushNotifToMany
   const isSupplier = currentUser?.role === "supplier";
   const isAdmin    = currentUser?.role === "admin";
 
-  // Mark messages as read when chat is opened OR when new messages arrive while chat is open (non-admin only)
+  // Mark messages as read when chat is opened OR when new messages arrive
   useEffect(() => {
-    if (isAdmin) return;
+    if (!currentUser?.full_name) return;
     db.markMessagesRead(devId, currentUser?.full_name).then(() => {
       db.getDevs().then(setDevs);
     });
@@ -4067,64 +4067,54 @@ function UsersPage({ users, setUsers, factories, currentUser, showToast, askConf
         )}
         <Card className="shadow-lg overflow-hidden">
           <div className="p-5 border-b border-slate-100"><h2 className="font-semibold text-slate-800">Active Users ({activeUsers.length})</h2></div>
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead className="bg-slate-50 border-b border-slate-200">
-                <tr>{["User", "Chinese Name", "Email", "Role", "WeChat ID", "Factory", ""].map((h) => (
-                  <th key={h} className="px-5 py-3.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap">{h}</th>
-                ))}</tr>
-              </thead>
-              <tbody className="bg-white divide-y divide-slate-100">
-                {activeUsers.map((u) => (
-                  <tr key={u.id} className="hover:bg-slate-50 transition-colors">
-                    <td className="px-5 py-4">
-                      {editingId === u.id
-                        ? <Input value={editName} onChange={(e) => setEditName(e.target.value)} className="h-9 w-36" />
-                        : <div className="flex items-center gap-3">
-                            <div className="w-8 h-8 rounded-full bg-amber-100 flex items-center justify-center text-amber-600">{Icon.user}</div>
-                            <span className="font-medium text-slate-800 text-sm">{u.full_name || <span className="text-slate-400 italic">No name</span>}</span>
-                          </div>}
-                    </td>
-                    <td className="px-5 py-4">
-                      {editingId === u.id
-                        ? <Input value={editChineseName} onChange={(e) => setEditChineseName(e.target.value)} placeholder="中文名" className="h-9 w-28" />
-                        : <span className="text-sm text-slate-600">{u.chinese_name || <span className="text-slate-300 text-xs">—</span>}</span>}
-                    </td>
-                    <td className="px-5 py-4 text-sm text-slate-600">
-                      {editingId === u.id
-                        ? <Input value={editEmail} onChange={(e) => setEditEmail(e.target.value)} placeholder="email@company.com" className="h-9 w-44" />
-                        : <div className="flex items-center gap-1.5">{Icon.mail} {u.email}</div>}
-                    </td>
-                    <td className="px-5 py-4">
-                      {editingId === u.id
-                        ? <Select value={editRole} onChange={setEditRole} className="h-9 w-28"><option value="admin">Admin</option><option value="user">User</option><option value="supplier">Supplier</option><option value="viewer">Viewer (Slideshow)</option></Select>
-                        : <Badge className={ROLE_CSS[u.role] || ROLE_CSS.user}>{u.role || "user"}</Badge>}
-                    </td>
-                    <td className="px-5 py-4">
-                      {editingId === u.id
-                        ? <div className="relative"><span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-green-600">{Icon.wechat}</span><Input value={editWechat} onChange={(e) => setEditWechat(e.target.value)} className="h-9 w-36 pl-7" /></div>
-                        : u.wechat_id ? <span className="text-xs font-mono text-green-600 flex items-center gap-1">{Icon.wechat} {u.wechat_id}</span> : <span className="text-xs text-red-400">—</span>}
-                    </td>
-                    <td className="px-5 py-4">
-                      {editingId === u.id && editRole === "supplier"
-                        ? <Select value={editFactory} onChange={setEditFactory} className="h-9 w-40"><option value="">Select factory…</option>{factories.map((f) => <option key={f.id} value={f.id}>{f.name}</option>)}</Select>
-                        : <span className="text-sm text-slate-600">{u.factory_name || (u.role === "supplier" ? <span className="text-red-400 text-xs">Not assigned</span> : "—")}</span>}
-                    </td>
-                    <td className="px-5 py-4 text-right">
-                      {editingId === u.id
-                        ? <div className="flex items-center justify-end gap-2"><Btn variant="dark" size="sm" onClick={() => saveEdit(u)}>{Icon.check}</Btn><Btn variant="outline" size="sm" onClick={() => setEditingId(null)}>{Icon.close}</Btn></div>
-                        : !notAdmin && (
-                          <div className="flex items-center justify-end gap-1">
-                            <Btn variant="ghost" size="sm" onClick={() => startEdit(u)}>{Icon.edit} {t("edit")}</Btn>
-                            <Btn variant="ghost" size="sm" onClick={() => resetPassword(u.email)} className="text-blue-500 hover:text-blue-700" title="Send password reset email">🔑 Reset</Btn>
-                            <Btn variant="ghost" size="sm" onClick={() => deleteUser(u.id)} className="text-red-500 hover:text-red-700">🚫 Block</Btn>
-                          </div>
-                        )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          <div className="divide-y divide-slate-100">
+            {activeUsers.map((u) => (
+              <div key={u.id} className="p-4 hover:bg-slate-50 transition-colors">
+                {editingId === u.id ? (
+                  <div className="space-y-3">
+                    <div className="grid grid-cols-2 gap-3">
+                      <div><label className="text-xs text-slate-500 font-medium mb-1 block">Full Name</label><Input value={editName} onChange={(e) => setEditName(e.target.value)} className="h-9" /></div>
+                      <div><label className="text-xs text-slate-500 font-medium mb-1 block">Chinese Name</label><Input value={editChineseName} onChange={(e) => setEditChineseName(e.target.value)} placeholder="中文名" className="h-9" /></div>
+                      <div><label className="text-xs text-slate-500 font-medium mb-1 block">Email</label><Input value={editEmail} onChange={(e) => setEditEmail(e.target.value)} placeholder="email@company.com" className="h-9" /></div>
+                      <div><label className="text-xs text-slate-500 font-medium mb-1 block">Role</label><Select value={editRole} onChange={setEditRole} className="h-9"><option value="admin">Admin</option><option value="user">User</option><option value="supplier">Supplier</option><option value="viewer">Viewer (Slideshow)</option></Select></div>
+                      <div><label className="text-xs text-slate-500 font-medium mb-1 block">WeChat ID</label><div className="relative"><span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-green-600">{Icon.wechat}</span><Input value={editWechat} onChange={(e) => setEditWechat(e.target.value)} className="h-9 pl-7" /></div></div>
+                      {editRole === "supplier" && <div><label className="text-xs text-slate-500 font-medium mb-1 block">Factory</label><Select value={editFactory} onChange={setEditFactory} className="h-9"><option value="">Select factory…</option>{factories.map((f) => <option key={f.id} value={f.id}>{f.name}</option>)}</Select></div>}
+                    </div>
+                    <div className="flex justify-end gap-2">
+                      <Btn variant="outline" size="sm" onClick={() => setEditingId(null)}>{Icon.close} Cancel</Btn>
+                      <Btn variant="dark" size="sm" onClick={() => saveEdit(u)}>{Icon.check} Save</Btn>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-4">
+                    <div className="w-10 h-10 rounded-full bg-amber-100 flex items-center justify-center text-amber-600 flex-shrink-0">{Icon.user}</div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="font-semibold text-slate-800 text-sm">{u.full_name || <span className="text-slate-400 italic">No name</span>}</span>
+                        {u.chinese_name && <span className="text-slate-500 text-sm">· {u.chinese_name}</span>}
+                        <Badge className={ROLE_CSS[u.role] || ROLE_CSS.user}>{u.role || "user"}</Badge>
+                        {u.role === "supplier" && (u.factory_name
+                          ? <span className="text-xs bg-amber-50 text-amber-700 border border-amber-200 px-2 py-0.5 rounded-full">{u.factory_name}</span>
+                          : <span className="text-xs text-red-400">No factory assigned</span>)}
+                      </div>
+                      <div className="flex items-center gap-4 mt-1 flex-wrap">
+                        <span className="text-xs text-slate-500 flex items-center gap-1">{Icon.mail} {u.email}</span>
+                        {u.wechat_id
+                          ? <span className="text-xs text-green-600 font-mono flex items-center gap-1">{Icon.wechat} {u.wechat_id}</span>
+                          : <span className="text-xs text-slate-300">No WeChat</span>}
+                      </div>
+                    </div>
+                    {!notAdmin && (
+                      <div className="flex items-center gap-1 flex-shrink-0">
+                        <Btn variant="ghost" size="sm" onClick={() => startEdit(u)}>{Icon.edit} Edit</Btn>
+                        <Btn variant="ghost" size="sm" onClick={() => resetPassword(u.email)} className="text-blue-500 hover:text-blue-700">🔑 Reset</Btn>
+                        <Btn variant="ghost" size="sm" onClick={() => deleteUser(u.id)} className="text-red-500 hover:text-red-700">🚫 Block</Btn>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            ))}
           </div>
         </Card>
 
