@@ -324,7 +324,7 @@ const db = {
     const allowed = ["id","development_id","factory_id","factory_name","type",
       "materials_status","materials_arrival_date","estimated_finish_date",
       "supplier_price","production_status","notes","progress_pictures",
-      "created_date"];
+      "production_steps","created_date"];
     const record = Object.fromEntries(Object.entries(u).filter(([k]) => allowed.includes(k)));
     const { data, error } = await supabase.from("development_updates").insert(record).select().single();
     if (error) console.error("insertUpdate failed:", error.message, record);
@@ -371,6 +371,19 @@ const DEV_STATUS_CSS = {
 };
 const DEV_STATUS_LABEL = () => ({ pending: t("pending") || "Pending", open: t("open"), in_progress: t("inProgress"), completed: t("completed"), cancelled: t("cancelled") });
 const MAT_LABEL = { not_started: "Not Started", sourcing: "Sourcing", ordered: "Ordered", received: "Received", unavailable: "Unavailable" };
+const PRODUCTION_STEPS = [
+  { id: "original_sample",   label: "Waiting for Original Sample",  icon: "🔬" },
+  { id: "sourcing_materials",label: "Sourcing Materials",           icon: "🔍" },
+  { id: "waiting_materials", label: "Waiting for Materials",        icon: "⏳" },
+  { id: "materials_receipt", label: "Materials Receipt",            icon: "📦" },
+  { id: "open_mold",         label: "Open Mold",                    icon: "🔩" },
+  { id: "printing",          label: "Printing",                     icon: "🖨️" },
+  { id: "dyeing_fabric",     label: "Dyeing Fabric",                icon: "🎨" },
+  { id: "embroidery",        label: "Making Embroidery",            icon: "🧵" },
+  { id: "lab_dips",          label: "Arranging Lab Dips",           icon: "🧪" },
+  { id: "metal_plating",     label: "Metal Plating",                icon: "✨" },
+  { id: "assembly",          label: "Assembly of Components",       icon: "🔧" },
+];
 const ROLE_CSS  = { admin: "bg-purple-100 text-purple-700", user: "bg-blue-100 text-blue-700", supplier: "bg-orange-100 text-orange-700", viewer: "bg-teal-100 text-teal-700" };
 
 function genId(prefix) {
@@ -3102,7 +3115,20 @@ function DevDetailPage({ devId, devs, setDevs, factories, getFactory, getUser, o
         status: mark_complete ? "completed" : "update_submitted",
         changed_by: currentUser?.full_name || "Supplier",
         changed_at: new Date().toISOString(),
-        label: mark_complete ? "Supplier submitted final update & marked complete" : `Supplier submitted update${data.notes ? `: ${data.notes.slice(0, 60)}` : ""}`,
+        label: (() => {
+          if (mark_complete) return "Supplier submitted final update & marked complete";
+          const steps = data.production_steps || {};
+          const stepLabels = Object.entries(steps).map(([id, s]) => {
+            const step = PRODUCTION_STEPS.find(p => p.id === id);
+            const label = step?.label || id;
+            if (s.est_date) {
+              const days = Math.ceil((new Date(s.est_date) - new Date()) / 86400000);
+              return days > 0 ? `${label} (${days}d)` : label;
+            }
+            return label;
+          });
+          return stepLabels.length > 0 ? stepLabels.join(" · ") : `Update submitted${data.notes ? \`: \${data.notes.slice(0, 40)}\` : ""}`;
+        })(),
       };
       const newHistory = [...(dev.status_history || []), historyEntry];
       if (mark_complete) {
@@ -3446,42 +3472,6 @@ function DevDetailPage({ devId, devs, setDevs, factories, getFactory, getUser, o
               )}
               {isSupplier ? (
                 <>
-                  {dev.special_remarks && (
-                    <Card className="shadow-sm p-5 border-l-4 border-l-purple-400">
-                      <h3 className="font-semibold text-purple-800 border-b border-purple-100 pb-2 mb-3 text-sm uppercase tracking-wide">📋 Special Remarks</h3>
-                      <p className="text-sm text-slate-700 whitespace-pre-wrap">{dev.special_remarks}</p>
-                    </Card>
-                  )}
-                  {dev.artwork_files?.length > 0 && (
-                    <Card className="shadow-sm p-5 border-l-4 border-l-indigo-400">
-                      <h3 className="font-semibold text-indigo-800 border-b border-indigo-100 pb-2 mb-3 text-sm uppercase tracking-wide flex items-center gap-2">
-                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
-                        Artwork Files ({dev.artwork_files.length})
-                      </h3>
-                      <div className="grid grid-cols-2 gap-2">
-                        {dev.artwork_files.map((f, i) => {
-                          const isImage = /\.(png|jpg|jpeg|gif|webp|svg)$/i.test(f.name);
-                          const isPdf = /\.pdf$/i.test(f.name);
-                          return (
-                            <a key={i} href={f.url} target="_blank" rel="noreferrer"
-                              className="group flex flex-col items-center gap-2 p-3 bg-indigo-50 border border-indigo-100 rounded-xl hover:bg-indigo-100 transition-colors">
-                              {isImage
-                                ? <img src={f.url} alt={f.name} className="w-full h-20 object-cover rounded-lg border border-indigo-100" />
-                                : isPdf
-                                  ? <PdfThumbnail url={f.url} height={80} />
-                                  : <div className="w-full h-20 flex flex-col items-center justify-center bg-indigo-100 rounded-lg gap-1">
-                                      <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="text-indigo-400"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
-                                      <span className="text-xs font-bold uppercase text-indigo-400">{f.name.split('.').pop().toUpperCase()}</span>
-                                    </div>
-                              }
-                              <span className="text-xs text-indigo-700 w-full text-center font-medium line-clamp-2 leading-tight">{f.name}</span>
-                              <span className="text-xs text-indigo-400 group-hover:text-indigo-600">Tap to open ↗</span>
-                            </a>
-                          );
-                        })}
-                      </div>
-                    </Card>
-                  )}
                   <Card className="shadow-sm p-5">
                     <h3 className="font-semibold text-slate-800 border-b border-slate-100 pb-2 mb-3 text-sm uppercase tracking-wide">Seller Contact</h3>
                     {(() => {
@@ -3534,63 +3524,171 @@ function DevDetailPage({ devId, devs, setDevs, factories, getFactory, getUser, o
 
 function FactoryUpdateForm({ dev, onSave, onCancel }) {
   const isFirstUpdate = !dev.updates?.length;
+  const today = new Date().toISOString().slice(0, 10);
   const [form, setForm] = useState({
     factory_id: dev.factory_ids?.[0] || "", factory_name: dev.factory_names?.[0] || "",
-    type: "progress", materials_status: "not_started",
-    materials_arrival_date: "", estimated_finish_date: "",
-    supplier_price: "", production_status: "", notes: "", progress_pictures: [],
+    type: "progress", production_steps: {}, estimated_finish_date: "",
+    supplier_price: "", notes: "", progress_pictures: [],
   });
+  const [stepError, setStepError] = useState("");
+  const [dateErrors, setDateErrors] = useState({});
 
   const set = (key, val) => setForm((p) => ({ ...p, [key]: val }));
+
+  const toggleStep = (stepId) => {
+    setForm(p => {
+      const steps = { ...p.production_steps };
+      if (steps[stepId]) {
+        delete steps[stepId];
+      } else {
+        steps[stepId] = { checked: true, est_date: "" };
+      }
+      return { ...p, production_steps: steps };
+    });
+  };
+
+  const setStepDate = (stepId, date) => {
+    // Validate: step date can't be before today
+    const errors = { ...dateErrors };
+    if (date && date < today) {
+      errors[stepId] = "Date can't be in the past";
+    } else {
+      delete errors[stepId];
+    }
+    setDateErrors(errors);
+    setForm(p => ({
+      ...p,
+      production_steps: { ...p.production_steps, [stepId]: { ...p.production_steps[stepId], est_date: date } }
+    }));
+  };
+
+  const setFinishDate = (date) => {
+    const errors = { ...dateErrors };
+    if (date && date < today) {
+      errors["finish"] = "Finish date can't be in the past";
+    } else {
+      delete errors["finish"];
+    }
+    setDateErrors(errors);
+    set("estimated_finish_date", date);
+  };
+
   const addImages = async (e) => {
     const files = Array.from(e.target.files || []);
     for (const file of files) {
       try {
         const url = await uploadImage(file);
         setForm((p) => ({ ...p, progress_pictures: [...p.progress_pictures, url] }));
-      } catch (err) {
-        alert("Upload failed: " + (err.message || err));
-      }
+      } catch (err) { alert("Upload failed: " + (err.message || err)); }
     }
   };
 
+  const handleSubmit = (markComplete) => {
+    const checkedSteps = Object.keys(form.production_steps);
+    if (checkedSteps.length === 0) { setStepError("Please tick at least one production step."); return; }
+    if (Object.keys(dateErrors).length > 0) return;
+    setStepError("");
+    onSave({ ...form, mark_complete: markComplete });
+  };
+
+  const checkedCount = Object.keys(form.production_steps).length;
+
   return (
-    <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 space-y-3">
-      <h4 className="text-sm font-semibold text-slate-700">Submit Factory Update</h4>
-      <div className="grid grid-cols-2 gap-3">
-        <div><Label>Materials Status</Label>
-          <Select value={form.materials_status} onChange={(v) => set("materials_status", v)}>
-            {Object.entries(MAT_LABEL).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-          </Select>
-        </div>
-        <div><Label>Est. Finish Date</Label><Input type="date" value={form.estimated_finish_date} onChange={(e) => set("estimated_finish_date", e.target.value)} /></div>
-        <div><Label>Est. Materials Arrival Date</Label><Input type="date" value={form.materials_arrival_date} onChange={(e) => set("materials_arrival_date", e.target.value)} /></div>
-        {isFirstUpdate && <div><Label>{t("supplierPrice")}</Label><Input value={form.supplier_price} onChange={(e) => set("supplier_price", e.target.value)} placeholder="0.00" /></div>}
+    <div className="bg-white border-2 border-purple-100 rounded-2xl overflow-hidden shadow-md">
+      {/* Header */}
+      <div className="bg-gradient-to-r from-purple-600 to-purple-700 px-5 py-4">
+        <h4 className="text-white font-semibold text-base">Submit Production Update</h4>
+        <p className="text-purple-200 text-xs mt-0.5">Tick the steps you are currently working on</p>
       </div>
-      <div><Label>Production Status</Label><Textarea value={form.production_status} onChange={(e) => set("production_status", e.target.value)} placeholder="Current stage…" rows={2} /></div>
-      <div><Label>Notes</Label><Textarea value={form.notes} onChange={(e) => set("notes", e.target.value)} placeholder="Additional notes…" rows={2} /></div>
-      <div>
-        <Label>Progress Photos</Label>
-        <label className="flex items-center justify-center h-11 border-2 border-dashed border-slate-200 rounded-xl cursor-pointer hover:border-amber-400 transition-all">
-          <input type="file" accept="image/*" multiple onChange={addImages} className="hidden" />
-          <span className="flex items-center gap-2 text-sm text-slate-500">{Icon.upload} Upload photos</span>
-        </label>
-        {form.progress_pictures.length > 0 && (
-          <div className="grid grid-cols-4 gap-2 mt-2">
-            {form.progress_pictures.map((p, i) => (
-              <div key={i} className="aspect-square rounded-lg overflow-hidden"><img src={p} alt="" className="w-full h-full object-cover" /></div>
-            ))}
+
+      <div className="p-5 space-y-5">
+        {/* Production Steps Checklist */}
+        <div>
+          <div className="flex items-center justify-between mb-3">
+            <label className="text-xs font-semibold text-slate-600 uppercase tracking-wide">Production Steps</label>
+            {checkedCount > 0 && <span className="text-xs bg-purple-100 text-purple-700 px-2 py-0.5 rounded-full font-medium">{checkedCount} selected</span>}
           </div>
-        )}
-      </div>
-      <div className="flex justify-end gap-2">
-        <Btn variant="outline" size="sm" onClick={onCancel}>Cancel</Btn>
-        <Btn variant="purple" size="sm" onClick={() => onSave(form)}>{Icon.check} Submit Update</Btn>
-        <Btn variant="ghost" size="sm"
-          className="bg-green-50 text-green-700 border border-green-200 hover:bg-green-100"
-          onClick={() => onSave({ ...form, mark_complete: true })}>
-          ✅ Submit & Mark Complete
-        </Btn>
+          {stepError && <p className="text-xs text-red-500 mb-2">{stepError}</p>}
+          <div className="space-y-2">
+            {PRODUCTION_STEPS.map(step => {
+              const isChecked = !!form.production_steps[step.id];
+              const stepData = form.production_steps[step.id];
+              return (
+                <div key={step.id} className={`rounded-xl border-2 transition-all ${isChecked ? "border-purple-300 bg-purple-50" : "border-slate-100 bg-slate-50 hover:border-slate-200"}`}>
+                  <div className="flex items-center gap-3 px-3 py-2.5 cursor-pointer" onClick={() => toggleStep(step.id)}>
+                    <div className={`w-5 h-5 rounded-md border-2 flex items-center justify-center flex-shrink-0 transition-all ${isChecked ? "bg-purple-600 border-purple-600" : "border-slate-300 bg-white"}`}>
+                      {isChecked && <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>}
+                    </div>
+                    <span className="text-base mr-1">{step.icon}</span>
+                    <span className={`text-sm font-medium flex-1 ${isChecked ? "text-purple-800" : "text-slate-600"}`}>{step.label}</span>
+                  </div>
+                  {isChecked && (
+                    <div className="px-3 pb-3">
+                      <div className="ml-8">
+                        <label className="text-xs text-purple-600 font-medium mb-1 block">Estimated completion date for this step</label>
+                        <input type="date" min={today} value={stepData?.est_date || ""}
+                          onChange={e => setStepDate(step.id, e.target.value)}
+                          className="w-full px-3 py-1.5 border border-purple-200 rounded-lg text-sm text-slate-700 bg-white focus:outline-none focus:border-purple-400" />
+                        {dateErrors[step.id] && <p className="text-xs text-red-500 mt-1">{dateErrors[step.id]}</p>}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Est. Finish Date + Price */}
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="text-xs font-semibold text-slate-600 uppercase tracking-wide mb-1 block">Est. Overall Finish Date</label>
+            <input type="date" min={today} value={form.estimated_finish_date}
+              onChange={e => setFinishDate(e.target.value)}
+              className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm text-slate-700 bg-white focus:outline-none focus:border-purple-400" />
+            {dateErrors["finish"] && <p className="text-xs text-red-500 mt-1">{dateErrors["finish"]}</p>}
+          </div>
+          {isFirstUpdate && (
+            <div>
+              <label className="text-xs font-semibold text-slate-600 uppercase tracking-wide mb-1 block">Supplier Price (¥)</label>
+              <input type="number" value={form.supplier_price} onChange={e => set("supplier_price", e.target.value)}
+                placeholder="0.00" step="0.01"
+                className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm text-slate-700 bg-white focus:outline-none focus:border-purple-400" />
+            </div>
+          )}
+        </div>
+
+        {/* Notes */}
+        <div>
+          <label className="text-xs font-semibold text-slate-600 uppercase tracking-wide mb-1 block">Additional Notes</label>
+          <textarea value={form.notes} onChange={e => set("notes", e.target.value)}
+            placeholder="Any additional information…" rows={2}
+            className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm resize-none focus:outline-none focus:border-purple-400" />
+        </div>
+
+        {/* Progress Photos */}
+        <div>
+          <label className="text-xs font-semibold text-slate-600 uppercase tracking-wide mb-1 block">Progress Photos</label>
+          <label className="flex items-center justify-center h-10 border-2 border-dashed border-slate-200 rounded-xl cursor-pointer hover:border-purple-400 hover:bg-purple-50/50 transition-all">
+            <input type="file" accept="image/*" multiple onChange={addImages} className="hidden" />
+            <span className="flex items-center gap-2 text-sm text-slate-500">{Icon.upload} Add photos</span>
+          </label>
+          {form.progress_pictures.length > 0 && (
+            <div className="grid grid-cols-4 gap-2 mt-2">
+              {form.progress_pictures.map((p, i) => (
+                <div key={i} className="aspect-square rounded-lg overflow-hidden"><img src={p} alt="" className="w-full h-full object-cover" /></div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Actions */}
+        <div className="flex justify-end gap-2 pt-1 border-t border-slate-100">
+          <Btn variant="outline" size="sm" onClick={onCancel}>Cancel</Btn>
+          <Btn variant="purple" size="sm" onClick={() => handleSubmit(false)}>{Icon.check} Submit Update</Btn>
+          <Btn variant="ghost" size="sm" className="bg-green-50 text-green-700 border border-green-200 hover:bg-green-100"
+            onClick={() => handleSubmit(true)}>✅ Submit & Mark Complete</Btn>
+        </div>
       </div>
     </div>
   );
@@ -3657,35 +3755,69 @@ function PdfThumbnail({ url, height = 80 }) {
 
 function UpdateCard({ update }) {
   const [lightbox, setLightbox] = useState(null);
+  const steps = update.production_steps || {};
+  const checkedSteps = Object.entries(steps);
   return (
-    <div className="border border-slate-100 rounded-xl p-4 space-y-2">
-      <div className="flex items-center justify-between flex-wrap gap-2">
+    <div className="border border-slate-100 rounded-xl overflow-hidden">
+      <div className="flex items-center justify-between px-4 py-3 bg-slate-50 border-b border-slate-100 flex-wrap gap-2">
         <div className="flex items-center gap-2">
           {Icon.building}
           <span className="font-semibold text-slate-800 text-sm">{update.factory_name}</span>
-          <Badge className={update.type === "confirmation" ? "bg-green-100 text-green-700" : "bg-blue-100 text-blue-700"}>
+          <Badge className={update.type === "confirmation" ? "bg-green-100 text-green-700" : "bg-purple-100 text-purple-700"}>
             {update.type === "confirmation" ? "✅ Confirmed" : "📋 Progress"}
           </Badge>
         </div>
         <span className="text-xs text-slate-400">{fmtDate(update.created_date)}</span>
       </div>
-      <div className="grid grid-cols-2 gap-3 text-sm">
-        {update.materials_status && <div><label className="text-xs text-slate-500 uppercase tracking-wide">Materials</label><p className="font-medium text-slate-700">{MAT_LABEL[update.materials_status] || update.materials_status}</p></div>}
-        {update.materials_arrival_date && <div><label className="text-xs text-slate-500 uppercase tracking-wide">Est. Materials Arrival</label><p className="font-medium text-slate-700">{fmtDate(update.materials_arrival_date)}</p></div>}
-        {update.estimated_finish_date && <div><label className="text-xs text-slate-500 uppercase tracking-wide">Est. Finish</label><p className="font-medium text-slate-700">{fmtDate(update.estimated_finish_date)}</p></div>}
-        {update.supplier_price && <div><label className="text-xs text-slate-500 uppercase tracking-wide">Price</label><p className="font-medium text-slate-700">¥{update.supplier_price}</p></div>}
-      </div>
-      {update.production_status && <div><label className="text-xs text-slate-500 uppercase tracking-wide">Production Status</label><p className="text-sm text-slate-700 mt-0.5">{update.production_status}</p></div>}
-      {update.notes && <div><label className="text-xs text-slate-500 uppercase tracking-wide">Notes</label><p className="text-sm text-slate-700 mt-0.5">{update.notes}</p></div>}
-      {update.progress_pictures?.length > 0 && (
-        <div className="grid grid-cols-4 gap-1.5 mt-2">
-          {update.progress_pictures.map((p, i) => (
-            <div key={i} className="rounded aspect-square overflow-hidden">
-              <img src={p} alt="" className="w-full h-full object-cover cursor-pointer hover:opacity-90 transition-opacity" onClick={() => setLightbox(p)} />
+      <div className="p-4 space-y-3">
+        {/* Production steps */}
+        {checkedSteps.length > 0 && (
+          <div>
+            <label className="text-xs text-slate-500 uppercase tracking-wide font-medium mb-2 block">Production Steps</label>
+            <div className="space-y-1.5">
+              {checkedSteps.map(([id, s]) => {
+                const step = PRODUCTION_STEPS.find(p => p.id === id);
+                if (!step) return null;
+                const days = s.est_date ? Math.ceil((new Date(s.est_date) - new Date()) / 86400000) : null;
+                return (
+                  <div key={id} className="flex items-center justify-between bg-purple-50 border border-purple-100 rounded-lg px-3 py-2">
+                    <div className="flex items-center gap-2">
+                      <div className="w-4 h-4 rounded bg-purple-600 flex items-center justify-center flex-shrink-0">
+                        <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                      </div>
+                      <span className="text-xs mr-0.5">{step.icon}</span>
+                      <span className="text-sm text-purple-800 font-medium">{step.label}</span>
+                    </div>
+                    {s.est_date && (
+                      <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${days !== null && days < 0 ? "bg-red-100 text-red-600" : days === 0 ? "bg-amber-100 text-amber-700" : "bg-purple-100 text-purple-700"}`}>
+                        {days !== null && days < 0 ? "Overdue" : days === 0 ? "Today" : `${days}d`} · {fmtDate(s.est_date)}
+                      </span>
+                    )}
+                  </div>
+                );
+              })}
             </div>
-          ))}
+          </div>
+        )}
+        {/* Dates + Price */}
+        <div className="grid grid-cols-2 gap-3 text-sm">
+          {update.estimated_finish_date && <div><label className="text-xs text-slate-500 uppercase tracking-wide">Est. Finish</label><p className="font-medium text-slate-700 mt-0.5">{fmtDate(update.estimated_finish_date)}</p></div>}
+          {update.supplier_price && <div><label className="text-xs text-slate-500 uppercase tracking-wide">Price</label><p className="font-medium text-slate-700 mt-0.5">¥{update.supplier_price}</p></div>}
         </div>
-      )}
+        {/* Legacy fields for old updates */}
+        {update.production_status && <div><label className="text-xs text-slate-500 uppercase tracking-wide">Production Status</label><p className="text-sm text-slate-700 mt-0.5">{update.production_status}</p></div>}
+        {update.materials_status && !checkedSteps.length && <div><label className="text-xs text-slate-500 uppercase tracking-wide">Materials</label><p className="text-sm text-slate-700 mt-0.5">{MAT_LABEL[update.materials_status] || update.materials_status}</p></div>}
+        {update.notes && <div><label className="text-xs text-slate-500 uppercase tracking-wide">Notes</label><p className="text-sm text-slate-700 mt-0.5">{update.notes}</p></div>}
+        {update.progress_pictures?.length > 0 && (
+          <div className="grid grid-cols-4 gap-1.5">
+            {update.progress_pictures.map((p, i) => (
+              <div key={i} className="rounded aspect-square overflow-hidden">
+                <img src={p} alt="" className="w-full h-full object-cover cursor-pointer hover:opacity-90 transition-opacity" onClick={() => setLightbox(p)} />
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
       {lightbox && (
         <div className="fixed inset-0 z-50 bg-black/90 flex items-center justify-center p-4" onClick={() => setLightbox(null)}>
           <img src={lightbox} alt="" className="max-w-full max-h-full object-contain rounded-xl shadow-2xl" onClick={e => e.stopPropagation()} />
