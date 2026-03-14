@@ -4048,21 +4048,13 @@ function UpdateCard({ update, isSupplier, onEditStep }) {
   const checkedSteps = Object.entries(steps);
   return (
     <div className="border border-slate-100 rounded-xl overflow-hidden">
-      <div className="flex items-center justify-between px-4 py-3 bg-slate-50 border-b border-slate-100 flex-wrap gap-2">
-        <div className="flex items-center gap-2">
-          {Icon.building}
-          <span className="font-semibold text-slate-800 text-sm">{update.factory_name}</span>
-          <Badge className={update.type === "confirmation" ? "bg-green-100 text-green-700" : "bg-purple-100 text-purple-700"}>
-            {update.type === "confirmation" ? "✅ Confirmed" : "📋 Progress"}
-          </Badge>
-        </div>
+      <div className="flex items-center justify-between px-3 py-2 border-b border-slate-100">
         <span className="text-xs text-slate-400">{fmtDate(update.created_date)}</span>
+        {update.notes && <span className="text-xs text-slate-500 italic truncate max-w-[60%]">{update.notes}</span>}
       </div>
-      <div className="p-4 space-y-3">
-        {/* Production steps */}
+      <div className="p-3 space-y-2">
         {checkedSteps.length > 0 && (
           <div>
-            <label className="text-xs text-slate-500 uppercase tracking-wide font-medium mb-2 block">Production Steps</label>
             <div className="space-y-1.5">
               {checkedSteps.map(([id, s]) => {
                 const step = PRODUCTION_STEPS.find(p => p.id === id);
