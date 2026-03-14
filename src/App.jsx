@@ -1150,7 +1150,7 @@ export default function App() {
       : `${d.by || "Team"} marked "${d.title || "a development"}" as completed`;
     if (k === "devReopened") return globalLang === "zh"
       ? `${d.by || "供应商"} 重新开启了 "${d.title || "开发"}"`
-      : `${d.by || "Supplier"} reopened "${d.title || "a development"}"` ;
+      : `${d.by || "Supplier"} reopened "${d.title || "a development"}"`;
     return n.msg || "";
   }
   const [dbError, setDbError]     = useState(null);
@@ -1416,7 +1416,7 @@ export default function App() {
     content = (
       <DevelopmentsPage devs={filteredDevs} setDevs={setDevs} factories={factories} users={users}
         currentUser={currentUser} onView={(id) => setDetail({ type: "dev", id })}
-        showToast={showToast} onNotify={notifyFactory} askConfirm={askConfirm} pushNotif={pushNotif} />
+        showToast={showToast} onNotify={notifyFactory} askConfirm={askConfirm} pushNotif={pushNotif} pushNotifToMany={pushNotifToMany} />
     );
   } else if (page === "factories") {
     content = (
@@ -2310,7 +2310,7 @@ function VisitDetailPage({ visitId, visits, setVisits, factories, onBack, curren
 // ─────────────────────────────────────────────────────────────────────────────
 // Developments
 // ─────────────────────────────────────────────────────────────────────────────
-function DevelopmentsPage({ devs, setDevs, factories, users, currentUser, onView, showToast, onNotify, askConfirm, pushNotif }) {
+function DevelopmentsPage({ devs, setDevs, factories, users, currentUser, onView, showToast, onNotify, askConfirm, pushNotif, pushNotifToMany }) {
   const [showForm, setShowForm]     = useState(false);
   const [editingDev, setEditingDev] = useState(null);
   const [search, setSearch]         = useState("");
@@ -2929,8 +2929,8 @@ function DevDetailPage({ devId, devs, setDevs, factories, getFactory, getUser, o
     await db.upsertDev({ ...dev, status, status_history: newHistory, updates: undefined, messages: undefined });
     setDevs((p) => p.map((d) => d.id === devId ? { ...d, status, status_history: newHistory } : d));
     showToast(`Status: ${DEV_STATUS_LABEL()[status]}`);
-    // Notify on reopen or complete
-    if ((status === "open" || status === "completed") && pushNotifToMany) {
+    // Notify admins + team member + assigned user on complete or reopen
+    if ((status === "completed" || status === "open") && pushNotifToMany) {
       const recipientIds = [
         ...users.filter(u => u.role === "admin").map(u => u.id),
         dev.team_member_id,
