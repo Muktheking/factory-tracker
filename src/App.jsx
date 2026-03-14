@@ -1145,6 +1145,9 @@ export default function App() {
     if (k === "newMsgCount") return globalLang === "zh"
       ? `${d.count} 条新消息`
       : `${d.count} new message${d.count > 1 ? "s" : ""}`;
+    if (k === "devReopened") return globalLang === "zh"
+      ? `${d.by || "供应商"} 重新开启了 "${d.title || "开发"}"`
+      : `${d.by || "Supplier"} reopened "${d.title || "a development"}"` ;
     return n.msg || "";
   }
   const [dbError, setDbError]     = useState(null);
@@ -2939,6 +2942,18 @@ function DevDetailPage({ devId, devs, setDevs, factories, getFactory, getUser, o
     await db.upsertDev({ ...dev, status, status_history: newHistory, updates: undefined, messages: undefined });
     setDevs((p) => p.map((d) => d.id === devId ? { ...d, status, status_history: newHistory } : d));
     showToast(`Status: ${DEV_STATUS_LABEL()[status]}`);
+    // Notify on reopen
+    if (status === "open" && pushNotifToMany) {
+      const recipientIds = [
+        ...users.filter(u => u.role === "admin").map(u => u.id),
+        dev.team_member_id,
+        dev.assigned_user_id,
+      ].filter(id => id && id !== currentUser?.id);
+      await pushNotifToMany(recipientIds, "devReopened", {
+        title: dev.title || "",
+        by: currentUser?.full_name || "Supplier",
+      }, devId, "dev");
+    }
   }
 
   async function saveUpdate(data) {
