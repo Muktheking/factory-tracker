@@ -375,14 +375,18 @@ const PRODUCTION_STEPS = [
   { id: "original_sample",   label: "Waiting for Original Sample",  icon: "🔬" },
   { id: "sourcing_materials",label: "Sourcing Materials",           icon: "🔍" },
   { id: "waiting_materials", label: "Waiting for Materials",        icon: "⏳" },
-  { id: "materials_receipt", label: "Materials Receipt",            icon: "📦" },
   { id: "open_mold",         label: "Open Mold",                    icon: "🔩" },
   { id: "printing",          label: "Printing",                     icon: "🖨️" },
   { id: "dyeing_fabric",     label: "Dyeing Fabric",                icon: "🎨" },
   { id: "embroidery",        label: "Making Embroidery",            icon: "🧵" },
   { id: "lab_dips",          label: "Arranging Lab Dips",           icon: "🧪" },
   { id: "metal_plating",     label: "Metal Plating",                icon: "✨" },
-  { id: "assembly",          label: "Assembly of Components",       icon: "🔧" },
+  { id: "washing",           label: "Washing",                      icon: "🫧" },
+  { id: "quilting",          label: "Quilting",                     icon: "🪡" },
+  { id: "stitching",         label: "Stitching",                    icon: "🧶" },
+  { id: "assembly",          label: "Assembling",                   icon: "🔧" },
+  { id: "revising_sample",   label: "Revising Sample",              icon: "✏️" },
+  { id: "waiting_client",    label: "Waiting for Client Confirmation", icon: "🤝" },
 ];
 const ROLE_CSS  = { admin: "bg-purple-100 text-purple-700", user: "bg-blue-100 text-blue-700", supplier: "bg-orange-100 text-orange-700", viewer: "bg-teal-100 text-teal-700" };
 
@@ -1159,10 +1163,10 @@ export default function App() {
       : `${d.visitor || "Someone"} visited ${d.factory || ""}`;
     if (k === "pending") return `${globalLang === "zh" ? "新账户申请" : "New signup request"}: ${d.name || ""} (${d.email || ""})`;
     if (k === "devUpdate") {
-      const preview = d.notes || "";
+      const steps = Array.isArray(d.steps) && d.steps.length > 0 ? d.steps.join(", ") : null;
       return globalLang === "zh"
-        ? `${d.factory || "工厂"} 更新了 "${d.title || "开发"}"${preview ? `: ${preview}` : ""}`
-        : `${d.factory || "Factory"} posted update on "${d.title || "a development"}"${preview ? `: ${preview}` : ""}`;
+        ? `${d.factory || "工厂"} 开始 ${steps || "更新"} · "${d.title || "开发"}"`
+        : `${d.factory || "Factory"} started ${steps || "update"} · "${d.title || "a development"}"`;
     }
     if (k === "newDevSupplier") return globalLang === "zh"
       ? `新开发任务: "${d.title || ""}"`
@@ -1203,6 +1207,12 @@ export default function App() {
     if (k === "devCompleted") return globalLang === "zh"
       ? `${d.by || "团队"} 标记开发完成: "${d.title || "开发"}"`
       : `${d.by || "Team"} marked "${d.title || "a development"}" as completed`;
+    if (k === "stepDueToday") return globalLang === "zh"
+      ? `⏰ 今日到期: ${d.factory || "工厂"} · ${d.step || ""} · "${d.title || ""}"`
+      : `⏰ Due today: ${d.factory || "Factory"} · ${d.step || ""} · "${d.title || ""}"` ;
+    if (k === "stepOverdue") return globalLang === "zh"
+      ? `🔴 逾期 ${d.days || 1} 天: ${d.factory || "工厂"} · ${d.step || ""} · "${d.title || ""}"`
+      : `🔴 Overdue by ${d.days || 1}d: ${d.factory || "Factory"} · ${d.step || ""} · "${d.title || ""}"` ;
     if (k === "devReopened") return globalLang === "zh"
       ? `${d.by || "供应商"} 重新开启了 "${d.title || "开发"}"`
       : `${d.by || "Supplier"} reopened "${d.title || "a development"}"`;
@@ -1317,7 +1327,49 @@ export default function App() {
   useEffect(() => {
     if (!session || !currentUser) return;
     const dataInterval = setInterval(() => {
-      db.getDevs().then(setDevs);
+      db.getDevs().then(newDevs => {
+        setDevs(newDevs);
+        if (!currentUserRef.current || currentUserRef.current.role === "viewer") return;
+        const today = new Date(); today.setHours(0,0,0,0);
+        const todayStr = today.toISOString().slice(0,10);
+        const sentKey = "stepNotifSent_" + todayStr;
+        const sentIds = (() => { try { return JSON.parse(sessionStorage.getItem(sentKey) || "[]"); } catch { return []; } })();
+        const newSentIds = [...sentIds];
+        newDevs.forEach(dev => {
+          if (dev.status !== "open" && dev.status !== "in_progress") return;
+          const latestUpdate = dev.updates?.[0];
+          if (!latestUpdate?.production_steps) return;
+          Object.entries(latestUpdate.production_steps).forEach(([stepId, s]) => {
+            if (!s.est_date) return;
+            const due = new Date(s.est_date); due.setHours(0,0,0,0);
+            const daysOverdue = Math.floor((today - due) / 86400000);
+            if (daysOverdue < 0) return;
+            const notifId = dev.id + "_" + stepId + "_" + s.est_date;
+            if (sentIds.includes(notifId)) return;
+            newSentIds.push(notifId);
+            const step = PRODUCTION_STEPS.find(p => p.id === stepId);
+            const stepLabel = step ? step.label : stepId;
+            const msgKey = daysOverdue === 0 ? "stepDueToday" : "stepOverdue";
+            const msgData = { title: dev.title || "", step: stepLabel, factory: dev.factory_names?.[0] || "", days: daysOverdue };
+            supabase.from("users").select("id,role,factory_id").then(({ data: uRows }) => {
+              if (!uRows) return;
+              const supplierUser = uRows.find(u => u.role === "supplier" && dev.factory_ids?.includes(u.factory_id));
+              const recipientIds = [
+                ...uRows.filter(u => u.role === "admin").map(u => u.id),
+                dev.team_member_id, dev.assigned_user_id, supplierUser?.id,
+              ].filter((id, i, arr) => id && arr.indexOf(id) === i);
+              recipientIds.forEach(rid => {
+                supabase.from("notifications").insert({
+                  id: "N-" + Date.now() + "-" + Math.random().toString(36).slice(2),
+                  recipient_id: rid, msg_key: msgKey, msg_data: msgData,
+                  dev_id: dev.id, type: "dev", read: false, created_at: new Date().toISOString(),
+                });
+              });
+            });
+          });
+        });
+        try { sessionStorage.setItem(sentKey, JSON.stringify(newSentIds)); } catch {}
+      });
       db.getVisits().then(setVisits);
     }, 20000);
     // Poll notifications every 10s — guarantees delivery even if Realtime is not working
@@ -1366,9 +1418,23 @@ export default function App() {
   const getUser    = (id) => users.find((u) => u.id === id);
   const getDisplayName = (user) => user?.chinese_name || user?.full_name || "";
 
-  const needsFollowUp = devs.filter(
-    (d) => (d.status === "open" || d.status === "in_progress") && (!d.updates || d.updates.length === 0) && daysAgo(d.created_date) >= 3
-  );
+  const needsFollowUp = devs.filter((d) => {
+    if (d.status !== "open" && d.status !== "in_progress") return false;
+    // Original rule: no updates after 3 days
+    if (!d.updates?.length && daysAgo(d.created_date) >= 3) return true;
+    // New rule: any step with an overdue est_date and no newer update
+    const latestUpdate = d.updates?.[0];
+    const latestUpdateDate = latestUpdate?.created_date ? new Date(latestUpdate.created_date) : null;
+    const steps = latestUpdate?.production_steps || {};
+    return Object.values(steps).some(s => {
+      if (!s.est_date) return false;
+      const due = new Date(s.est_date);
+      const today = new Date(); today.setHours(0,0,0,0);
+      if (due > today) return false; // not yet due
+      // Only flag if no newer update after the due date
+      return !latestUpdateDate || latestUpdateDate <= due;
+    });
+  });
 
   // Developments with target date within 7 days (or already overdue)
   const dueSoon = devs.filter((d) => {
@@ -1740,7 +1806,9 @@ function DashboardPage({ visits, devs, factories, setPage, needsFollowUp, dueSoo
               <div className="space-y-3">
                 {recentDevs.length === 0 ? <p className="text-slate-400 text-sm text-center py-8">{t("noDevs")}</p>
                   : recentDevs.map((d) => {
-                    const nf = (d.status === "open" || d.status === "in_progress") && (!d.updates || d.updates.length === 0) && daysAgo(d.created_date) >= 3;
+                    const _lu = d.updates?.[0]; const _tod = new Date(); _tod.setHours(0,0,0,0);
+                    const nf = ((d.status === "open" || d.status === "in_progress") && (!d.updates || d.updates.length === 0) && daysAgo(d.created_date) >= 3) ||
+                      ((d.status === "open" || d.status === "in_progress") && Object.values(_lu?.production_steps || {}).some(s => { if (!s.est_date) return false; const due = new Date(s.est_date); due.setHours(0,0,0,0); return due <= _tod; }));
                     return (
                       <Card key={d.id} className={`shadow-sm hover:shadow-md transition-all ${nf ? "border-l-4 border-l-orange-400" : ""}`}>
                         <div className="flex items-center gap-3 p-3">
@@ -1778,7 +1846,9 @@ function DashboardPage({ visits, devs, factories, setPage, needsFollowUp, dueSoo
             <div className="space-y-3">
               {recentDevs.length === 0 ? <p className="text-slate-400 text-sm text-center py-8">{t("noDevs")}</p>
                 : recentDevs.map((d) => {
-                  const nf = (d.status === "open" || d.status === "in_progress") && (!d.updates || d.updates.length === 0) && daysAgo(d.created_date) >= 3;
+                  const _lu2 = d.updates?.[0]; const _tod2 = new Date(); _tod2.setHours(0,0,0,0);
+                  const nf = ((d.status === "open" || d.status === "in_progress") && (!d.updates || d.updates.length === 0) && daysAgo(d.created_date) >= 3) ||
+                    ((d.status === "open" || d.status === "in_progress") && Object.values(_lu2?.production_steps || {}).some(s => { if (!s.est_date) return false; const due = new Date(s.est_date); due.setHours(0,0,0,0); return due <= _tod2; }));
                   return (
                     <Card key={d.id} className={`shadow-sm hover:shadow-md transition-all ${nf ? "border-l-4 border-l-orange-400" : ""}`}>
                       <div className="flex items-center gap-3 p-3">
@@ -2733,7 +2803,18 @@ function DevelopmentsPage({ devs, setDevs, factories, users, currentUser, onView
 }
 
 function DevCard({ dev, onEdit, onDelete, onView, hasNewUpdate, hasBeenEdited }) {
-  const needsFollowUp = (dev.status === "open" || dev.status === "in_progress") && (!dev.updates || dev.updates.length === 0) && daysAgo(dev.created_date) >= 3;
+  const latestUpdate = dev.updates?.[0];
+  const hasOverdueStep = (() => {
+    const steps = latestUpdate?.production_steps || {};
+    const latestUpdateDate = latestUpdate?.created_date ? new Date(latestUpdate.created_date) : null;
+    const today = new Date(); today.setHours(0,0,0,0);
+    return Object.values(steps).some(s => {
+      if (!s.est_date) return false;
+      const due = new Date(s.est_date); due.setHours(0,0,0,0);
+      return due <= today && (!latestUpdateDate || latestUpdateDate <= due);
+    });
+  })();
+  const needsFollowUp = ((dev.status === "open" || dev.status === "in_progress") && (!dev.updates || dev.updates.length === 0) && daysAgo(dev.created_date) >= 3) || hasOverdueStep;
   const isActive    = dev.status === "open" || dev.status === "in_progress";
   const isCompleted = dev.status === "completed";
   const activeDays  = daysAgo(dev.created_date);
@@ -3152,10 +3233,15 @@ function DevDetailPage({ devId, devs, setDevs, factories, getFactory, getUser, o
           mark_complete ? supplierUser?.id : null,
         ].filter(id => id && id !== currentUser?.id);
         if (recipientIds.length) {
+          const stepNames = Object.keys(data.production_steps || {}).map(id => {
+            const s = PRODUCTION_STEPS.find(p => p.id === id);
+            return s ? s.label : id;
+          });
           await pushNotifToMany(recipientIds, mark_complete ? "devCompleted" : "devUpdate", {
             factory: dev.factory_names?.[0] || currentUser?.factory_name || "Supplier",
             title: dev.title || "",
-            notes: (data.production_status || data.notes || "").slice(0, 40),
+            steps: stepNames,
+            notes: data.notes || "",
             by: currentUser?.full_name || "Supplier",
           }, devId, "dev");
         }
@@ -3567,7 +3653,14 @@ function FactoryUpdateForm({ dev, onSave, onCancel }) {
     if (date && date < today) {
       errors["finish"] = "Finish date can't be in the past";
     } else {
-      delete errors["finish"];
+      // Check it's not earlier than any checked step date
+      const stepDates = Object.values(form.production_steps).map(s => s.est_date).filter(Boolean);
+      const latestStep = stepDates.length ? stepDates.sort().at(-1) : null;
+      if (date && latestStep && date < latestStep) {
+        errors["finish"] = `Finish date can't be before step date (${latestStep})`;
+      } else {
+        delete errors["finish"];
+      }
     }
     setDateErrors(errors);
     set("estimated_finish_date", date);
