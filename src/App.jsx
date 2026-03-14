@@ -320,8 +320,23 @@ const db = {
     return data;
   },
   async deleteDev(id)           { await supabase.from("developments").delete().eq("id", id); },
-  async insertUpdate(u)         { const { data } = await supabase.from("development_updates").insert(u).select().single(); return data; },
-  async insertMessage(m)        { const { data } = await supabase.from("development_messages").insert(m).select().single(); return data; },
+  async insertUpdate(u) {
+    const allowed = ["id","development_id","factory_id","factory_name","type",
+      "materials_status","materials_arrival_date","estimated_finish_date",
+      "supplier_price","production_status","notes","progress_pictures",
+      "submitted_by","created_date"];
+    const record = Object.fromEntries(Object.entries(u).filter(([k]) => allowed.includes(k)));
+    const { data, error } = await supabase.from("development_updates").insert(record).select().single();
+    if (error) console.error("insertUpdate failed:", error.message, record);
+    return data;
+  },
+  async insertMessage(m) {
+    const allowed = ["id","development_id","sender_name","sender_role","message","read_by","created_date"];
+    const record = Object.fromEntries(Object.entries(m).filter(([k]) => allowed.includes(k)));
+    const { data, error } = await supabase.from("development_messages").insert(record).select().single();
+    if (error) console.error("insertMessage failed:", error.message, record);
+    return data;
+  },
   async markMessagesRead(devId, userName) {
     // Get all messages in this dev not sent by user and not yet read by them
     const { data: msgs } = await supabase.from("development_messages")
@@ -1130,9 +1145,12 @@ export default function App() {
       ? `${d.visitor || "有人"} 拜访了 ${d.factory || ""}`
       : `${d.visitor || "Someone"} visited ${d.factory || ""}`;
     if (k === "pending") return `${globalLang === "zh" ? "新账户申请" : "New signup request"}: ${d.name || ""} (${d.email || ""})`;
-    if (k === "devUpdate") return globalLang === "zh"
-      ? `${d.factory || "工厂"} 更新了 "${d.title || "开发"}"${d.notes ? `: ${d.notes}` : ""}`
-      : `${d.factory || "Factory"} posted update on "${d.title || "a development"}"${d.notes ? `: ${d.notes}` : ""}`;
+    if (k === "devUpdate") {
+      const preview = d.notes || "";
+      return globalLang === "zh"
+        ? `${d.factory || "工厂"} 更新了 "${d.title || "开发"}"${preview ? `: ${preview}` : ""}`
+        : `${d.factory || "Factory"} posted update on "${d.title || "a development"}"${preview ? `: ${preview}` : ""}`;
+    }
     if (k === "newDevSupplier") return globalLang === "zh"
       ? `新开发任务: "${d.title || ""}"`
       : `New development assigned to you: "${d.title || ""}"`;
@@ -1145,6 +1163,30 @@ export default function App() {
     if (k === "newMsgCount") return globalLang === "zh"
       ? `${d.count} 条新消息`
       : `${d.count} new message${d.count > 1 ? "s" : ""}`;
+    if (k === "visitDeleted") return globalLang === "zh"
+      ? `拜访记录已删除: ${d.visitor || ""} → ${d.factory || ""}`
+      : `Visit deleted: ${d.visitor || ""} at ${d.factory || ""}`;
+    if (k === "devEdited") return globalLang === "zh"
+      ? `${d.by || "管理员"} 编辑了开发: "${d.title || ""}"`
+      : `${d.by || "Admin"} edited development: "${d.title || ""}"`;
+    if (k === "devDeleted") return globalLang === "zh"
+      ? `${d.by || "管理员"} 删除了开发: "${d.title || ""}"`
+      : `${d.by || "Admin"} deleted development: "${d.title || ""}"`;
+    if (k === "userApproved") return globalLang === "zh"
+      ? `用户已批准: ${d.name || d.email || ""}`
+      : `User approved: ${d.name || d.email || ""}`;
+    if (k === "userRejected") return globalLang === "zh"
+      ? `用户已拒绝: ${d.name || d.email || ""}`
+      : `User rejected: ${d.name || d.email || ""}`;
+    if (k === "userAdded") return globalLang === "zh"
+      ? `新用户已添加: ${d.name || d.email || ""} (${d.role || ""})`
+      : `New user added: ${d.name || d.email || ""} (${d.role || ""})`;
+    if (k === "userUnblocked") return globalLang === "zh"
+      ? `用户已解封: ${d.name || d.email || ""}`
+      : `User unblocked: ${d.name || d.email || ""}`;
+    if (k === "userBlocked") return globalLang === "zh"
+      ? `用户已被封禁: ${d.name || d.email || ""}`
+      : `User blocked: ${d.name || d.email || ""}`;
     if (k === "devCompleted") return globalLang === "zh"
       ? `${d.by || "团队"} 标记开发完成: "${d.title || "开发"}"`
       : `${d.by || "Team"} marked "${d.title || "a development"}" as completed`;
@@ -1389,7 +1431,7 @@ export default function App() {
     const visit = visits.find((v) => v.id === detail.id);
     if (visit) content = (
       <VisitDetailPage visitId={detail.id} visits={visits} setVisits={setVisits} factories={factories}
-        onBack={() => setDetail(null)} currentUser={currentUser} showToast={showToast} askConfirm={askConfirm} />
+        onBack={() => setDetail(null)} currentUser={currentUser} showToast={showToast} askConfirm={askConfirm} users={users} pushNotifToMany={pushNotifToMany} />
     );
   } else if (page === "dashboard") {
     const dashVisits = isAdmin ? visits : visits.filter(v => v.visitor_name === currentUser?.full_name);
@@ -1832,10 +1874,17 @@ function VisitsPage({ visits, setVisits, factories, currentUser, onView, showToa
   }
 
   async function del(id) {
+    const target = visits.find(v => v.id === id);
     askConfirm("Delete this visit? This cannot be undone.", async () => {
       await db.deleteVisit(id);
       setVisits((p) => p.filter((v) => v.id !== id));
       showToast("Visit deleted");
+      if (pushNotifToMany) {
+        const recipientIds = users.filter(u => u.role === "admin" && u.id !== currentUser?.id).map(u => u.id);
+        if (recipientIds.length) await pushNotifToMany(recipientIds, "visitDeleted", {
+          visitor: target?.visitor_name || "", factory: target?.factory_name || "",
+        }, null, "visit");
+      }
     });
   }
 
@@ -2177,7 +2226,7 @@ function useReverseGeocode(lat, lon, existingAddress) {
   return address;
 }
 
-function VisitDetailPage({ visitId, visits, setVisits, factories, onBack, currentUser, showToast, askConfirm }) {
+function VisitDetailPage({ visitId, visits, setVisits, factories, onBack, currentUser, showToast, askConfirm, users = [], pushNotifToMany }) {
   const [showEdit, setShowEdit] = useState(false);
   const [lightbox, setLightbox] = useState(null);
   const visit = visits.find((v) => v.id === visitId);
@@ -2200,6 +2249,12 @@ function VisitDetailPage({ visitId, visits, setVisits, factories, onBack, curren
       setVisits((p) => p.filter((v) => v.id !== visitId));
       showToast("Visit deleted");
       onBack();
+      if (pushNotifToMany) {
+        const recipientIds = users.filter(u => u.role === "admin" && u.id !== currentUser?.id).map(u => u.id);
+        if (recipientIds.length) await pushNotifToMany(recipientIds, "visitDeleted", {
+          visitor: visit?.visitor_name || "", factory: visit?.factory_name || "",
+        }, null, "visit");
+      }
     });
   }
 
@@ -2943,11 +2998,13 @@ function DevDetailPage({ devId, devs, setDevs, factories, getFactory, getUser, o
         }, devId, "dev");
       }
     } else if (status === "completed") {
-      // Marked complete by admin/user → notify admins + team member + assigned user
+      // Marked complete → notify admins + team member + assigned user + supplier
+      const supplierUser = users.find(u => u.role === "supplier" && dev.factory_ids?.includes(u.factory_id));
       const recipientIds = [
         ...users.filter(u => u.role === "admin").map(u => u.id),
         dev.team_member_id,
         dev.assigned_user_id,
+        supplierUser?.id,
       ].filter(id => id && id !== currentUser?.id);
       if (recipientIds.length) {
         await pushNotifToMany(recipientIds, "devCompleted", {
@@ -2982,31 +3039,23 @@ function DevDetailPage({ devId, devs, setDevs, factories, getFactory, getUser, o
         setDevs((p) => p.map((d) => d.id === devId ? { ...d, status_history: newHistory, updates: [saved, ...(d.updates || [])] } : d));
         showToast("Update submitted");
       }
-      // Notify admin + team member + assigned user
-      console.log("[saveUpdate] pushNotifToMany:", !!pushNotifToMany);
-      console.log("[saveUpdate] users:", users.length, users.map(u => ({id: u.id, role: u.role, name: u.full_name})));
-      console.log("[saveUpdate] dev.team_member_id:", dev.team_member_id);
-      console.log("[saveUpdate] dev.assigned_user_id:", dev.assigned_user_id);
-      console.log("[saveUpdate] currentUser.id:", currentUser?.id);
+      // Notify admin + team member + assigned user (+ supplier if marked complete)
       if (pushNotifToMany) {
+        const supplierUser = users.find(u => u.role === "supplier" && dev.factory_ids?.includes(u.factory_id));
         const recipientIds = [
           ...users.filter(u => u.role === "admin").map(u => u.id),
           dev.team_member_id,
           dev.assigned_user_id,
+          mark_complete ? supplierUser?.id : null,
         ].filter(id => id && id !== currentUser?.id);
-        console.log("[saveUpdate] recipientIds:", recipientIds);
         if (recipientIds.length) {
-          await pushNotifToMany(recipientIds, "devUpdate", {
+          await pushNotifToMany(recipientIds, mark_complete ? "devCompleted" : "devUpdate", {
             factory: dev.factory_names?.[0] || currentUser?.factory_name || "Supplier",
             title: dev.title || "",
             notes: (data.production_status || data.notes || "").slice(0, 40),
+            by: currentUser?.full_name || "Supplier",
           }, devId, "dev");
-          console.log("[saveUpdate] notification sent!");
-        } else {
-          console.log("[saveUpdate] NO recipients - notification not sent!");
         }
-      } else {
-        console.log("[saveUpdate] pushNotifToMany is undefined - notification not sent!");
       }
     }
     setShowUpdateForm(false);
@@ -3025,6 +3074,14 @@ function DevDetailPage({ devId, devs, setDevs, factories, getFactory, getUser, o
         await pushNotif(data.assigned_user_id, "devAssigned", { title: data.title || dev.title || "" }, devId, "dev");
       }
     }
+    // Notify supplier that their development was edited
+    if (pushNotifToMany) {
+      const supplierUser = users.find(u => u.role === "supplier" && dev.factory_ids?.includes(u.factory_id));
+      const recipientIds = [supplierUser?.id].filter(id => id && id !== currentUser?.id);
+      if (recipientIds.length) await pushNotifToMany(recipientIds, "devEdited", {
+        title: data.title || dev.title || "", by: currentUser?.full_name || "Admin",
+      }, devId, "dev");
+    }
   }
 
   async function del() {
@@ -3032,6 +3089,16 @@ function DevDetailPage({ devId, devs, setDevs, factories, getFactory, getUser, o
       await db.deleteDev(devId);
       setDevs((p) => p.filter((d) => d.id !== devId));
       showToast("Deleted"); onBack();
+      if (pushNotifToMany) {
+        const supplierUser = users.find(u => u.role === "supplier" && dev.factory_ids?.includes(u.factory_id));
+        const recipientIds = [
+          ...users.filter(u => u.role === "admin" && u.id !== currentUser?.id).map(u => u.id),
+          supplierUser?.id,
+        ].filter(id => id && id !== currentUser?.id);
+        if (recipientIds.length) await pushNotifToMany(recipientIds, "devDeleted", {
+          title: dev.title || "", by: currentUser?.full_name || "Admin",
+        }, null, "dev");
+      }
     });
   }
 
@@ -3771,19 +3838,35 @@ function UsersPage({ users, setUsers, factories, currentUser, showToast, askConf
   const notifiedPendingRef = useRef(new Set());
   useEffect(() => {
     if (!currentUser?.id || currentUser.role !== "admin" || !pushNotif) return;
-    pendingUsers.forEach(u => {
-      if (!notifiedPendingRef.current.has(u.id)) {
+    // Only notify about pending users we haven't already notified in DB
+    (async () => {
+      for (const u of pendingUsers) {
+        if (notifiedPendingRef.current.has(u.id)) continue;
         notifiedPendingRef.current.add(u.id);
-        pushNotif(currentUser.id, "pending", { name: u.full_name, email: u.email }, null, "pending");
+        // Check if a pending notif for this user already exists to avoid duplicates
+        const { data: existing } = await supabase
+          .from("notifications")
+          .select("id")
+          .eq("recipient_id", currentUser.id)
+          .eq("msg_key", "pending")
+          .eq("read", false)
+          .filter("msg_data->>email", "eq", u.email)
+          .maybeSingle();
+        if (!existing) {
+          pushNotif(currentUser.id, "pending", { name: u.full_name, email: u.email }, null, "pending");
+        }
       }
-    });
-  }, [pendingUsers.length]);
+    })();
+  }, [pendingUsers.map(u => u.id).join(",")]);
 
   async function approveUser(u) {
-    const updated = { ...u, status: "approved" };
     const saved = await db.approveUser(u.id);
     if (saved) setUsers(p => p.map(x => x.id === u.id ? { ...x, status: "approved" } : x));
     showToast(`✓ ${u.full_name} approved — they can now log in.`);
+    if (pushNotif) {
+      const otherAdminIds = users.filter(x => x.role === "admin" && x.id !== currentUser?.id).map(x => x.id);
+      otherAdminIds.forEach(id => pushNotif(id, "userApproved", { name: u.full_name, email: u.email }, null, "pending"));
+    }
   }
 
   async function rejectUser(u) {
@@ -3791,6 +3874,10 @@ function UsersPage({ users, setUsers, factories, currentUser, showToast, askConf
       await db.deleteUser(u.id); // sets status = blocked
       setUsers(p => p.filter(x => x.id !== u.id));
       showToast(`${u.full_name} rejected.`);
+      if (pushNotif) {
+        const otherAdminIds = users.filter(x => x.role === "admin" && x.id !== currentUser?.id).map(x => x.id);
+        otherAdminIds.forEach(id => pushNotif(id, "userRejected", { name: u.full_name, email: u.email }, null, "pending"));
+      }
     });
   }
 
@@ -3825,8 +3912,8 @@ function UsersPage({ users, setUsers, factories, currentUser, showToast, askConf
       showToast("User blocked — they can no longer log in.");
       if (pushNotif && target) {
         const otherAdminIds = users.filter(u => u.role === "admin" && u.id !== currentUser?.id).map(u => u.id);
-        otherAdminIds.forEach(adminId => pushNotif(adminId, "userDeleted", {
-          name: target.full_name, email: target.email, action: "blocked",
+        otherAdminIds.forEach(adminId => pushNotif(adminId, "userBlocked", {
+          name: target.full_name, email: target.email,
         }, null, "pending"));
       }
     });
@@ -3836,6 +3923,10 @@ function UsersPage({ users, setUsers, factories, currentUser, showToast, askConf
     const saved = await db.approveUser(u.id);
     if (saved) setUsers(p => p.map(x => x.id === u.id ? { ...x, status: "approved" } : x));
     showToast(`✓ ${u.full_name} unblocked — they can now log in again.`);
+    if (pushNotif) {
+      const otherAdminIds = users.filter(x => x.role === "admin" && x.id !== currentUser?.id).map(x => x.id);
+      otherAdminIds.forEach(id => pushNotif(id, "userUnblocked", { name: u.full_name, email: u.email }, null, "pending"));
+    }
   }
 
   async function permanentlyDeleteUser(u) {
@@ -3882,6 +3973,10 @@ function UsersPage({ users, setUsers, factories, currentUser, showToast, askConf
     setShowAddUser(false); setNewName(""); setNewEmail(""); setNewPassword(""); setNewRole("user");
     setAddingUser(false);
     showToast(`✓ User ${newName} added — they can now log in.`);
+    if (pushNotif) {
+      const otherAdminIds = users.filter(x => x.role === "admin" && x.id !== currentUser?.id).map(x => x.id);
+      otherAdminIds.forEach(id => pushNotif(id, "userAdded", { name: newName, email: newEmail, role: newRole }, null, "pending"));
+    }
   }
 
   async function resetPassword(email) {
