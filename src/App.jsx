@@ -300,7 +300,7 @@ const db = {
       "assigned_user_id","assigned_user_name",
       "material","size","weight","internal_estimated_date","internal_estimated_price",
       "internal_notes","special_remarks","picture_url","additional_pictures",
-      "artwork_files","status","status_history","created_date"];
+      "artwork_files","status","status_history","created_date","last_edited_at"];
     const record = Object.fromEntries(Object.entries(d).filter(([k]) => allowed.includes(k)));
     const { data, error } = await supabase.from("developments").upsert(record).select().single();
     if (error) {
@@ -2394,6 +2394,22 @@ function DevelopmentsPage({ devs, setDevs, factories, users, currentUser, onView
     const seen = seenUpdates[dev.id];
     return !seen || new Date(latest) > new Date(seen);
   }
+  // seenEdits: track when admin last edited a dev (for "Updated" pill)
+  const [seenEdits, setSeenEdits] = useState(() => {
+    try { return JSON.parse(sessionStorage.getItem("seenEdits") || "{}"); } catch { return {}; }
+  });
+  function markEditSeen(devId) {
+    setSeenEdits(prev => {
+      const next = { ...prev, [devId]: new Date().toISOString() };
+      try { sessionStorage.setItem("seenEdits", JSON.stringify(next)); } catch {}
+      return next;
+    });
+  }
+  function hasBeenEdited(dev) {
+    if (!dev.last_edited_at) return false;
+    const seen = seenEdits[dev.id];
+    return !seen || new Date(dev.last_edited_at) > new Date(seen);
+  }
   const allUsers = [...new Set(devs.map(d => d.team_member_name).filter(Boolean))];
 
   // Factory-aware stats
@@ -2460,7 +2476,7 @@ function DevelopmentsPage({ devs, setDevs, factories, users, currentUser, onView
     } else {
       const { updates: _, messages: __, ...record } = data;
       const prevDev = devs.find(d => d.id === data.id);
-      await db.upsertDev(record);
+      await db.upsertDev({ ...record, last_edited_at: new Date().toISOString() });
       const full = await db.getDevs();
       setDevs(full);
       showToast("Development updated");
@@ -2469,6 +2485,14 @@ function DevelopmentsPage({ devs, setDevs, factories, users, currentUser, onView
         if (data.assigned_user_id !== currentUser?.id) {
           await pushNotif(data.assigned_user_id, "devAssigned", { title: data.title || "" }, data.id, "dev");
         }
+      }
+      // Notify supplier that their development was edited
+      if (pushNotifToMany) {
+        const supplierUser = users.find(u => u.role === "supplier" && data.factory_ids?.includes(u.factory_id));
+        const recipientIds = [supplierUser?.id].filter(id => id && id !== currentUser?.id);
+        if (recipientIds.length) await pushNotifToMany(recipientIds, "devEdited", {
+          title: data.title || "", by: currentUser?.full_name || "Admin",
+        }, data.id, "dev");
       }
     }
     setShowForm(false); setEditingDev(null);
@@ -2683,7 +2707,8 @@ function DevelopmentsPage({ devs, setDevs, factories, users, currentUser, onView
                       onEdit={isAdmin ? () => { setEditingDev(d); setShowForm(true); } : null}
                       onDelete={isAdmin ? () => deleteDev(d.id) : null}
                       hasNewUpdate={hasNewUpdate(d)}
-                      onView={() => { markSeen(d.id, d.updates?.[0]?.created_date); onView(d.id); }} />
+                      hasBeenEdited={hasBeenEdited(d)}
+                      onView={() => { markSeen(d.id, d.updates?.[0]?.created_date); markEditSeen(d.id); onView(d.id); }} />
                   ))}
                 </div>
             }
@@ -2694,7 +2719,7 @@ function DevelopmentsPage({ devs, setDevs, factories, users, currentUser, onView
   );
 }
 
-function DevCard({ dev, onEdit, onDelete, onView, hasNewUpdate }) {
+function DevCard({ dev, onEdit, onDelete, onView, hasNewUpdate, hasBeenEdited }) {
   const needsFollowUp = (dev.status === "open" || dev.status === "in_progress") && (!dev.updates || dev.updates.length === 0) && daysAgo(dev.created_date) >= 3;
   const isActive    = dev.status === "open" || dev.status === "in_progress";
   const isCompleted = dev.status === "completed";
@@ -2722,12 +2747,20 @@ function DevCard({ dev, onEdit, onDelete, onView, hasNewUpdate }) {
                   <svg width="24" height="24" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.2}><rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline strokeLinecap="round" strokeLinejoin="round" points="21 15 16 10 5 21"/></svg>
                   <span className="text-xs">No photo</span>
                 </div>}
-          {hasNewUpdate && (
-            <div className="absolute bottom-0 left-0 right-0 flex justify-center pb-2">
-              <div className="bg-emerald-500 text-white text-xs font-bold px-3 py-1.5 rounded-full shadow-lg flex items-center gap-1.5 animate-pulse">
-                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
-                New Update
-              </div>
+          {(hasNewUpdate || hasBeenEdited) && (
+            <div className="absolute bottom-0 left-0 right-0 flex justify-center gap-1.5 pb-2 flex-wrap px-2">
+              {hasNewUpdate && (
+                <div className="bg-emerald-500 text-white text-xs font-bold px-3 py-1 rounded-full shadow-lg flex items-center gap-1 animate-pulse">
+                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                  New Update
+                </div>
+              )}
+              {hasBeenEdited && (
+                <div className="bg-blue-500 text-white text-xs font-bold px-3 py-1 rounded-full shadow-lg flex items-center gap-1 animate-pulse">
+                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                  Updated
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -2815,16 +2848,27 @@ function DevForm({ dev, factories, users, currentUser, onSave, onCancel }) {
     }
   };
 
+  const [artworkUploading, setArtworkUploading] = useState([]);
   const addArtworks = async (e) => {
     const files = Array.from(e.target.files || []);
     for (const file of files) {
+      const tempId = Date.now() + Math.random();
+      setArtworkUploading(p => [...p, { id: tempId, name: file.name, progress: 0 }]);
       try {
         const path = `${Date.now()}_${Math.random().toString(36).slice(2)}_${file.name}`;
+        // Simulate progress while uploading
+        const progressInterval = setInterval(() => {
+          setArtworkUploading(p => p.map(u => u.id === tempId ? { ...u, progress: Math.min(u.progress + 15, 90) } : u));
+        }, 200);
         const { error } = await supabase.storage.from("photos").upload(path, file, { upsert: false, contentType: file.type });
+        clearInterval(progressInterval);
         if (error) throw error;
+        setArtworkUploading(p => p.map(u => u.id === tempId ? { ...u, progress: 100 } : u));
         const { data } = supabase.storage.from("photos").getPublicUrl(path);
         setForm((p) => ({ ...p, artwork_files: [...(p.artwork_files || []), { name: file.name, url: data.publicUrl }] }));
+        setTimeout(() => setArtworkUploading(p => p.filter(u => u.id !== tempId)), 800);
       } catch (err) {
+        setArtworkUploading(p => p.filter(u => u.id !== tempId));
         alert("Artwork upload failed: " + (err.message || err));
       }
     }
@@ -2945,6 +2989,21 @@ function DevForm({ dev, factories, users, currentUser, onSave, onCancel }) {
             Upload artworks
           </span>
         </label>
+        {artworkUploading.length > 0 && (
+          <div className="space-y-1.5 mt-2">
+            {artworkUploading.map(u => (
+              <div key={u.id} className="px-3 py-2 bg-purple-50 border border-purple-100 rounded-lg">
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-xs text-purple-700 truncate flex-1">{u.name}</span>
+                  <span className="text-xs text-purple-500 ml-2">{u.progress}%</span>
+                </div>
+                <div className="h-1.5 bg-purple-100 rounded-full overflow-hidden">
+                  <div className="h-full bg-purple-500 rounded-full transition-all duration-200" style={{ width: `${u.progress}%` }} />
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
         {form.artwork_files?.length > 0 && (
           <div className="space-y-1.5 mt-2">
             {form.artwork_files.map((f, i) => (
@@ -3068,7 +3127,7 @@ function DevDetailPage({ devId, devs, setDevs, factories, getFactory, getUser, o
 
   async function saveDev(data) {
     const { updates: _, messages: __, ...record } = data;
-    await db.upsertDev({ ...record, id: devId });
+    await db.upsertDev({ ...record, id: devId, last_edited_at: new Date().toISOString() });
     const full = await db.getDevs();
     setDevs(full);
     setShowEdit(false);
@@ -3364,6 +3423,31 @@ function DevDetailPage({ devId, devs, setDevs, factories, getFactory, getUser, o
                     <Card className="shadow-sm p-5 border-l-4 border-l-purple-400">
                       <h3 className="font-semibold text-purple-800 border-b border-purple-100 pb-2 mb-3 text-sm uppercase tracking-wide">📋 Special Remarks</h3>
                       <p className="text-sm text-slate-700 whitespace-pre-wrap">{dev.special_remarks}</p>
+                    </Card>
+                  )}
+                  {dev.artwork_files?.length > 0 && (
+                    <Card className="shadow-sm p-5 border-l-4 border-l-indigo-400">
+                      <h3 className="font-semibold text-indigo-800 border-b border-indigo-100 pb-2 mb-3 text-sm uppercase tracking-wide flex items-center gap-2">
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                        Artwork Files ({dev.artwork_files.length})
+                      </h3>
+                      <div className="grid grid-cols-2 gap-2">
+                        {dev.artwork_files.map((f, i) => {
+                          const isImage = /\.(png|jpg|jpeg|gif|webp|svg)$/i.test(f.name);
+                          return (
+                            <a key={i} href={f.url} target="_blank" rel="noreferrer"
+                              className="group flex flex-col items-center gap-2 p-3 bg-indigo-50 border border-indigo-100 rounded-xl hover:bg-indigo-100 transition-colors">
+                              {isImage
+                                ? <img src={f.url} alt={f.name} className="w-full h-20 object-cover rounded-lg border border-indigo-100" />
+                                : <div className="w-full h-20 flex items-center justify-center bg-indigo-100 rounded-lg">
+                                    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="text-indigo-400"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                                  </div>
+                              }
+                              <span className="text-xs text-indigo-700 truncate w-full text-center font-medium">{f.name}</span>
+                            </a>
+                          );
+                        })}
+                      </div>
                     </Card>
                   )}
                   <Card className="shadow-sm p-5">
