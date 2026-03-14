@@ -393,6 +393,20 @@ const ROLE_CSS  = { admin: "bg-purple-100 text-purple-700", user: "bg-blue-100 t
 function genId(prefix) {
   return prefix + Date.now().toString(36).toUpperCase().slice(-4) + Math.random().toString(36).slice(2,5).toUpperCase();
 }
+function daysLeft(dateStr) {
+  if (!dateStr) return null;
+  const diff = Math.ceil((new Date(dateStr) - new Date()) / 86400000);
+  if (diff < 0) return `Overdue by ${Math.abs(diff)} Day${Math.abs(diff) !== 1 ? "s" : ""}`;
+  if (diff === 0) return "Due Today";
+  return `${diff} Day${diff !== 1 ? "s" : ""} Left`;
+}
+function daysLeftShort(dateStr) {
+  if (!dateStr) return null;
+  const diff = Math.ceil((new Date(dateStr) - new Date()) / 86400000);
+  if (diff < 0) return `Overdue ${Math.abs(diff)}d`;
+  if (diff === 0) return "Due Today";
+  return `${diff} Days Left`;
+}
 function daysAgo(d) {
   if (!d) return 0;
   return Math.floor((Date.now() - new Date(d).getTime()) / 86400000);
@@ -2132,6 +2146,36 @@ function VisitCard({ visit, onEdit, onDelete, onView, currentUser }) {
               )}
             </div>
           )}
+          {(() => {
+            const lu = dev.updates?.[0];
+            const steps = lu?.production_steps || {};
+            const activeSteps = Object.entries(steps).filter(([, s]) => !s.completed && s.est_date);
+            if (!activeSteps.length) return null;
+            const today = new Date();
+            // Find the most urgent step (soonest due, or most overdue)
+            const sorted = activeSteps.sort(([,a],[,b]) => new Date(a.est_date) - new Date(b.est_date));
+            return (
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                {sorted.slice(0, 2).map(([id, s]) => {
+                  const step = PRODUCTION_STEPS.find(p => p.id === id);
+                  if (!step) return null;
+                  const diff = Math.ceil((new Date(s.est_date) - today) / 86400000);
+                  const isOverdue = diff < 0;
+                  const isToday = diff === 0;
+                  const label = isOverdue ? `Overdue ${Math.abs(diff)}d` : isToday ? "Due Today" : `${diff} Days Left`;
+                  return (
+                    <div key={id} className={`flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-medium border ${isOverdue ? "bg-red-50 text-red-700 border-red-200" : isToday ? "bg-amber-50 text-amber-700 border-amber-200" : "bg-purple-50 text-purple-700 border-purple-100"}`}>
+                      <span>{step.icon}</span>
+                      <span>{step.label}</span>
+                      <span className="opacity-60">·</span>
+                      <span>{label}</span>
+                    </div>
+                  );
+                })}
+                {sorted.length > 2 && <span className="text-xs text-slate-400 self-center">+{sorted.length - 2} more</span>}
+              </div>
+            );
+          })()}
           <div className="mt-3 flex flex-col sm:flex-row sm:justify-end gap-1.5 sm:gap-1">
             <div className="flex gap-1 justify-end">
               {canEdit && onEdit && <Btn variant="ghost" size="sm" onClick={onEdit}>{Icon.edit}</Btn>}
@@ -2896,6 +2940,36 @@ function DevCard({ dev, onEdit, onDelete, onView, hasNewUpdate, hasBeenEdited })
               )}
             </div>
           )}
+          {(() => {
+            const lu = dev.updates?.[0];
+            const steps = lu?.production_steps || {};
+            const activeSteps = Object.entries(steps).filter(([, s]) => !s.completed && s.est_date);
+            if (!activeSteps.length) return null;
+            const today = new Date();
+            // Find the most urgent step (soonest due, or most overdue)
+            const sorted = activeSteps.sort(([,a],[,b]) => new Date(a.est_date) - new Date(b.est_date));
+            return (
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                {sorted.slice(0, 2).map(([id, s]) => {
+                  const step = PRODUCTION_STEPS.find(p => p.id === id);
+                  if (!step) return null;
+                  const diff = Math.ceil((new Date(s.est_date) - today) / 86400000);
+                  const isOverdue = diff < 0;
+                  const isToday = diff === 0;
+                  const label = isOverdue ? `Overdue ${Math.abs(diff)}d` : isToday ? "Due Today" : `${diff} Days Left`;
+                  return (
+                    <div key={id} className={`flex items-center gap-1 px-2 py-1 rounded-lg text-xs font-medium border ${isOverdue ? "bg-red-50 text-red-700 border-red-200" : isToday ? "bg-amber-50 text-amber-700 border-amber-200" : "bg-purple-50 text-purple-700 border-purple-100"}`}>
+                      <span>{step.icon}</span>
+                      <span>{step.label}</span>
+                      <span className="opacity-60">·</span>
+                      <span>{label}</span>
+                    </div>
+                  );
+                })}
+                {sorted.length > 2 && <span className="text-xs text-slate-400 self-center">+{sorted.length - 2} more</span>}
+              </div>
+            );
+          })()}
           <div className="mt-3 flex flex-col sm:flex-row sm:justify-end gap-1.5 sm:gap-1">
             <div className="flex gap-1 justify-end sm:justify-end">
               {onEdit   && <Btn variant="ghost" size="sm" onClick={(e) => { e.stopPropagation(); onEdit(dev);    }}>{Icon.edit}</Btn>}
@@ -3181,6 +3255,40 @@ function DevDetailPage({ devId, devs, setDevs, factories, getFactory, getUser, o
     }
   }
 
+  const [editingStep, setEditingStep] = useState(null); // { update, stepId, stepData, markDone }
+
+  async function handleEditStep(update, stepId, stepData, markDone = false) {
+    if (markDone) {
+      // Mark step as completed
+      const newSteps = { ...update.production_steps, [stepId]: { ...stepData, completed: true } };
+      const { error } = await supabase.from("development_updates")
+        .update({ production_steps: newSteps })
+        .eq("id", update.id);
+      if (!error) {
+        const full = await db.getDevs();
+        setDevs(full);
+        showToast("Step marked as done ✓");
+      }
+    } else {
+      setEditingStep({ update, stepId, stepData });
+    }
+  }
+
+  async function saveStepEdit(newDate) {
+    if (!editingStep) return;
+    const { update, stepId, stepData } = editingStep;
+    const newSteps = { ...update.production_steps, [stepId]: { ...stepData, est_date: newDate } };
+    const { error } = await supabase.from("development_updates")
+      .update({ production_steps: newSteps })
+      .eq("id", update.id);
+    if (!error) {
+      const full = await db.getDevs();
+      setDevs(full);
+      showToast("Step date updated");
+    }
+    setEditingStep(null);
+  }
+
   async function saveUpdate(data) {
     const { mark_complete, ...updateData } = data;
     // Sanitize empty strings to null for date fields (Supabase rejects "" for date type)
@@ -3204,7 +3312,9 @@ function DevDetailPage({ devId, devs, setDevs, factories, getFactory, getUser, o
             const label = step?.label || id;
             if (s.est_date) {
               const days = Math.ceil((new Date(s.est_date) - new Date()) / 86400000);
-              return days > 0 ? `${label} (${days}d)` : label;
+              if (days > 0) return label + " (" + days + " Day" + (days !== 1 ? "s" : "") + " Left)";
+              if (days === 0) return label + " (Due Today)";
+              return label;
             }
             return label;
           });
@@ -3367,6 +3477,25 @@ function DevDetailPage({ devId, devs, setDevs, factories, getFactory, getUser, o
                     </button>
                   ))}
                 </div>
+                {editingStep && (
+                  <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4">
+                    <div className="bg-white rounded-2xl shadow-2xl p-6 w-full max-w-sm space-y-4">
+                      <h3 className="font-semibold text-slate-800">Edit Step Date</h3>
+                      <p className="text-sm text-slate-600">{PRODUCTION_STEPS.find(p => p.id === editingStep.stepId)?.label}</p>
+                      <input type="date" min={new Date().toISOString().slice(0,10)}
+                        defaultValue={editingStep.stepData.est_date || ""}
+                        id="editStepDateInput"
+                        className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:border-purple-400" />
+                      <div className="flex justify-end gap-2">
+                        <Btn variant="outline" size="sm" onClick={() => setEditingStep(null)}>Cancel</Btn>
+                        <Btn variant="purple" size="sm" onClick={() => {
+                          const val = document.getElementById("editStepDateInput").value;
+                          if (val) saveStepEdit(val);
+                        }}>Save Date</Btn>
+                      </div>
+                    </div>
+                  </div>
+                )}
                 {activeTab === "updates" && (
                   <div className="p-5 space-y-4">
                     <div className="flex items-center justify-between">
@@ -3426,7 +3555,7 @@ function DevDetailPage({ devId, devs, setDevs, factories, getFactory, getUser, o
                     {!isSupplier && (!dev.updates || dev.updates.length === 0) && (
                       <p className="text-center text-slate-400 text-sm py-8">No factory updates yet.</p>
                     )}
-                    {dev.updates?.map((u) => <UpdateCard key={u.id} update={u} />)}
+                    {dev.updates?.map((u) => <UpdateCard key={u.id} update={u} isSupplier={isSupplier} onEditStep={handleEditStep} />)}
                   </div>
                 )}
                 {activeTab === "chat" && <DevChat devId={devId} dev={dev} setDevs={setDevs} currentUser={currentUser} users={users} pushNotifToMany={pushNotifToMany} />}
@@ -3846,7 +3975,7 @@ function PdfThumbnail({ url, height = 80 }) {
   );
 }
 
-function UpdateCard({ update }) {
+function UpdateCard({ update, isSupplier, onEditStep }) {
   const [lightbox, setLightbox] = useState(null);
   const steps = update.production_steps || {};
   const checkedSteps = Object.entries(steps);
@@ -3871,21 +4000,44 @@ function UpdateCard({ update }) {
               {checkedSteps.map(([id, s]) => {
                 const step = PRODUCTION_STEPS.find(p => p.id === id);
                 if (!step) return null;
-                const days = s.est_date ? Math.ceil((new Date(s.est_date) - new Date()) / 86400000) : null;
+                const dl = daysLeft(s.est_date);
+                const isOverdue = s.est_date && Math.ceil((new Date(s.est_date) - new Date()) / 86400000) < 0;
+                const isDueToday = s.est_date && Math.ceil((new Date(s.est_date) - new Date()) / 86400000) === 0;
+                const isDone = s.completed;
                 return (
-                  <div key={id} className="flex items-center justify-between bg-purple-50 border border-purple-100 rounded-lg px-3 py-2">
-                    <div className="flex items-center gap-2">
-                      <div className="w-4 h-4 rounded bg-purple-600 flex items-center justify-center flex-shrink-0">
-                        <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                  <div key={id} className={`rounded-lg border px-3 py-2 ${isDone ? "bg-green-50 border-green-200" : isOverdue ? "bg-red-50 border-red-200" : isDueToday ? "bg-amber-50 border-amber-200" : "bg-purple-50 border-purple-100"}`}>
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-2">
+                        <div className={`w-4 h-4 rounded flex items-center justify-center flex-shrink-0 ${isDone ? "bg-green-500" : "bg-purple-600"}`}>
+                          <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                        </div>
+                        <span className="text-xs mr-0.5">{step.icon}</span>
+                        <span className={`text-sm font-medium ${isDone ? "text-green-800 line-through opacity-70" : isOverdue ? "text-red-800" : "text-purple-800"}`}>{step.label}</span>
+                        {isDone && <span className="text-xs bg-green-100 text-green-700 px-1.5 py-0.5 rounded-full font-medium">✓ Done</span>}
                       </div>
-                      <span className="text-xs mr-0.5">{step.icon}</span>
-                      <span className="text-sm text-purple-800 font-medium">{step.label}</span>
+                      <div className="flex items-center gap-2">
+                        {s.est_date && !isDone && (
+                          <span className={`text-xs font-medium px-2 py-0.5 rounded-full whitespace-nowrap ${isOverdue ? "bg-red-100 text-red-600" : isDueToday ? "bg-amber-100 text-amber-700" : "bg-purple-100 text-purple-700"}`}>
+                            {dl}
+                          </span>
+                        )}
+                        {s.est_date && isDone && (
+                          <span className="text-xs text-green-600">{fmtDate(s.est_date)}</span>
+                        )}
+                        {isSupplier && onEditStep && !isDone && (
+                          <button onClick={() => onEditStep(update, id, s)}
+                            className="text-xs text-slate-400 hover:text-purple-600 px-1.5 py-0.5 rounded hover:bg-purple-50 transition-colors">
+                            Edit
+                          </button>
+                        )}
+                        {isSupplier && onEditStep && !isDone && (
+                          <button onClick={() => onEditStep(update, id, s, true)}
+                            className="text-xs text-green-600 hover:text-green-800 px-1.5 py-0.5 rounded hover:bg-green-50 border border-green-200 transition-colors font-medium">
+                            ✓ Done
+                          </button>
+                        )}
+                      </div>
                     </div>
-                    {s.est_date && (
-                      <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${days !== null && days < 0 ? "bg-red-100 text-red-600" : days === 0 ? "bg-amber-100 text-amber-700" : "bg-purple-100 text-purple-700"}`}>
-                        {days !== null && days < 0 ? "Overdue" : days === 0 ? "Today" : `${days}d`} · {fmtDate(s.est_date)}
-                      </span>
-                    )}
                   </div>
                 );
               })}
