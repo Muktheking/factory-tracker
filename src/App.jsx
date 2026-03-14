@@ -3045,16 +3045,29 @@ function DevDetailPage({ devId, devs, setDevs, factories, getFactory, getUser, o
     showToast(`Status: ${DEV_STATUS_LABEL()[status]}`);
     if (!pushNotifToMany) return;
     if (status === "open") {
-      // Reopened by admin/user → notify supplier linked to this dev's factory
       const supplierUser = users.find(u => u.role === "supplier" && dev.factory_ids?.includes(u.factory_id));
-      const recipientIds = [
-        supplierUser?.id,
-      ].filter(id => id && id !== currentUser?.id);
-      if (recipientIds.length) {
-        await pushNotifToMany(recipientIds, "devReopened", {
-          title: dev.title || "",
-          by: currentUser?.full_name || "Team",
-        }, devId, "dev");
+      if (currentUser?.role === "supplier") {
+        // Supplier reopened → notify admins + team member + assigned user
+        const recipientIds = [
+          ...users.filter(u => u.role === "admin").map(u => u.id),
+          dev.team_member_id,
+          dev.assigned_user_id,
+        ].filter(id => id && id !== currentUser?.id);
+        if (recipientIds.length) {
+          await pushNotifToMany(recipientIds, "devReopened", {
+            title: dev.title || "",
+            by: currentUser?.full_name || "Supplier",
+          }, devId, "dev");
+        }
+      } else {
+        // Admin/user reopened → notify supplier
+        const recipientIds = [supplierUser?.id].filter(id => id && id !== currentUser?.id);
+        if (recipientIds.length) {
+          await pushNotifToMany(recipientIds, "devReopened", {
+            title: dev.title || "",
+            by: currentUser?.full_name || "Team",
+          }, devId, "dev");
+        }
       }
     } else if (status === "completed") {
       // Marked complete → notify admins + team member + assigned user + supplier
@@ -3232,17 +3245,28 @@ function DevDetailPage({ devId, devs, setDevs, factories, getFactory, getUser, o
                 <Card className="shadow-sm p-4">
                   <h3 className="font-semibold text-slate-800 mb-3 text-sm flex items-center gap-2">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-purple-500"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
-                    Artwork Files
+                    Artwork Files ({dev.artwork_files.length})
                   </h3>
-                  <div className="space-y-1.5">
-                    {dev.artwork_files.map((f, i) => (
-                      <a key={i} href={f.url} target="_blank" rel="noreferrer"
-                        className="flex items-center gap-2 px-3 py-2 bg-purple-50 border border-purple-100 rounded-lg hover:bg-purple-100 transition-colors">
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-purple-500 flex-shrink-0"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
-                        <span className="text-xs text-purple-700 truncate">{f.name}</span>
-                        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="text-purple-400 ml-auto flex-shrink-0"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
-                      </a>
-                    ))}
+                  <div className="grid grid-cols-3 gap-2">
+                    {dev.artwork_files.map((f, i) => {
+                      const isImage = /\.(png|jpg|jpeg|gif|webp|svg)$/i.test(f.name);
+                      const isPdf = /\.pdf$/i.test(f.name);
+                      return (
+                        <a key={i} href={f.url} target="_blank" rel="noreferrer"
+                          className="group flex flex-col items-center gap-1.5 p-2 bg-purple-50 border border-purple-100 rounded-xl hover:bg-purple-100 transition-colors">
+                          {isImage
+                            ? <img src={f.url} alt={f.name} className="w-full h-16 object-cover rounded-lg border border-purple-100" onError={e => { e.target.style.display='none'; e.target.nextSibling.style.display='flex'; }} />
+                            : null}
+                          <div className={`w-full h-16 flex flex-col items-center justify-center rounded-lg gap-0.5 ${isPdf ? 'bg-red-50' : 'bg-purple-100'}`} style={{ display: isImage ? 'none' : 'flex' }}>
+                            {isPdf
+                              ? <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#ef4444" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+                              : <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="text-purple-400"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>}
+                            <span className={`text-xs font-bold uppercase ${isPdf ? 'text-red-400' : 'text-purple-400'}`}>{isPdf ? 'PDF' : f.name.split('.').pop().toUpperCase()}</span>
+                          </div>
+                          <span className="text-xs text-purple-700 w-full text-center font-medium line-clamp-2 leading-tight">{f.name}</span>
+                        </a>
+                      );
+                    })}
                   </div>
                 </Card>
               )}
@@ -3434,16 +3458,21 @@ function DevDetailPage({ devId, devs, setDevs, factories, getFactory, getUser, o
                       <div className="grid grid-cols-2 gap-2">
                         {dev.artwork_files.map((f, i) => {
                           const isImage = /\.(png|jpg|jpeg|gif|webp|svg)$/i.test(f.name);
+                          const isPdf = /\.pdf$/i.test(f.name);
                           return (
                             <a key={i} href={f.url} target="_blank" rel="noreferrer"
                               className="group flex flex-col items-center gap-2 p-3 bg-indigo-50 border border-indigo-100 rounded-xl hover:bg-indigo-100 transition-colors">
                               {isImage
-                                ? <img src={f.url} alt={f.name} className="w-full h-20 object-cover rounded-lg border border-indigo-100" />
-                                : <div className="w-full h-20 flex items-center justify-center bg-indigo-100 rounded-lg">
-                                    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="text-indigo-400"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
-                                  </div>
-                              }
-                              <span className="text-xs text-indigo-700 truncate w-full text-center font-medium">{f.name}</span>
+                                ? <img src={f.url} alt={f.name} className="w-full h-20 object-cover rounded-lg border border-indigo-100" onError={e => { e.target.style.display='none'; e.target.nextSibling.style.display='flex'; }} />
+                                : null}
+                              <div className={`w-full h-20 flex flex-col items-center justify-center rounded-lg gap-1 ${isPdf ? 'bg-red-50' : 'bg-indigo-100'}`} style={{ display: isImage ? 'none' : 'flex' }}>
+                                {isPdf
+                                  ? <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#ef4444" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+                                  : <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="text-indigo-400"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>}
+                                <span className={`text-xs font-bold uppercase ${isPdf ? 'text-red-400' : 'text-indigo-400'}`}>{isPdf ? 'PDF' : f.name.split('.').pop().toUpperCase()}</span>
+                              </div>
+                              <span className="text-xs text-indigo-700 w-full text-center font-medium line-clamp-2 leading-tight">{f.name}</span>
+                              <span className="text-xs text-indigo-400 group-hover:text-indigo-600">Tap to open ↗</span>
                             </a>
                           );
                         })}
