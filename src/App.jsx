@@ -1332,6 +1332,22 @@ export default function App() {
     })();
   }, [session]);
 
+  // Deep-link: if URL contains #dev=DEV-xxx, open that dev after data loads
+  useEffect(() => {
+    if (loading || !devs.length) return;
+    const hash = window.location.hash;
+    const match = hash.match(/^#dev=(.+)$/);
+    if (match) {
+      const devId = decodeURIComponent(match[1]);
+      const found = devs.find(d => d.id === devId);
+      if (found) {
+        setPage("developments");
+        setDetail({ type: "dev", id: devId });
+        window.location.hash = ""; // clean up URL
+      }
+    }
+  }, [loading, devs]);
+
   // Match the logged-in auth user to the users table by email
   const authEmail   = session?.user?.email;
   const currentUser = users.find((u) => u.email?.toLowerCase() === authEmail?.toLowerCase()) || null;
@@ -1453,6 +1469,7 @@ export default function App() {
                       factory_name: dev.factory_names?.[0] || "",
                       step_name: stepLabel,
                       status_message: statusMsg,
+                      dev_link: window.location.origin + "/#dev=" + encodeURIComponent(dev.id),
                     };
                     if (dev.picture_url) emailPayload.dev_image = dev.picture_url;
                     sendFollowUpEmail(emailPayload);
