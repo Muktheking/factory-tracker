@@ -1264,6 +1264,7 @@ export default function App() {
   const [dark, setDark]           = useState(() => { try { return localStorage.getItem("darkMode") === "1"; } catch { return false; } });
   const [pushSubscribed, setPushSubscribed] = useState(() => { try { return localStorage.getItem("pushSubscribed") === "1"; } catch { return false; } });
   const [showProfile, setShowProfile] = useState(false);
+  const [pushLoading, setPushLoading] = useState(false);
   const [showProfileEdit, setShowProfileEdit] = useState(false);
   const [profileForm, setProfileForm] = useState({});
   const [notifications, setNotifications] = useState([]);
@@ -1273,14 +1274,24 @@ export default function App() {
   function toggleDark() { setDark(d => { const n = !d; try { localStorage.setItem("darkMode", n ? "1" : "0"); } catch {} return n; }); }
 
   // ── PWA Service Worker + Push Subscription ─────────────────────────────────
-  async function registerPush(userId) {
-    if (!("serviceWorker" in navigator) || !("PushManager" in window)) return;
+  async function registerPush(userId, fromButton = false) {
+    if (!("serviceWorker" in navigator) || !("PushManager" in window)) {
+      if (fromButton) showToast("Push notifications not supported on this browser", "error");
+      return;
+    }
+    if (fromButton) setPushLoading(true);
     try {
       const reg = await navigator.serviceWorker.register("/sw.js");
       await navigator.serviceWorker.ready;
       const permission = await Notification.requestPermission();
-      if (permission !== "granted") return;
-      // Check if already subscribed
+      if (permission === "denied") {
+        if (fromButton) showToast("Notifications blocked — please enable in browser settings", "error");
+        return;
+      }
+      if (permission !== "granted") {
+        if (fromButton) showToast("Notification permission not granted", "error");
+        return;
+      }
       let sub = await reg.pushManager.getSubscription();
       if (!sub) {
         sub = await reg.pushManager.subscribe({
@@ -1288,7 +1299,6 @@ export default function App() {
           applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY),
         });
       }
-      // Save subscription to DB
       const subJson = sub.toJSON();
       await supabase.from("push_subscriptions").upsert({
         user_id: userId,
@@ -1298,8 +1308,12 @@ export default function App() {
       }, { onConflict: "user_id,endpoint" });
       try { localStorage.setItem("pushSubscribed", "1"); } catch {}
       setPushSubscribed(true);
+      if (fromButton) showToast("Push notifications enabled!", "ok");
     } catch (err) {
       console.warn("Push registration failed:", err);
+      if (fromButton) showToast("Failed to enable notifications", "error");
+    } finally {
+      if (fromButton) setPushLoading(false);
     }
   }
 
@@ -1526,7 +1540,7 @@ export default function App() {
     if (!currentUser?.id || notifsLoadedRef.current) return;
     notifsLoadedRef.current = true;
     db.getNotifs(currentUser.id).then(rows => setNotifications(rows));
-    registerPush(currentUser.id).catch(() => {});
+    registerPush(currentUser.id, false).catch(() => {});
   }, [currentUser?.id]);
 
   // Use a ref so realtime handlers always have latest currentUser
@@ -2144,11 +2158,10 @@ export default function App() {
                         <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="#16a34a" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6 6 0 10-12 0v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"/></svg>
                       </span>
                       <span className="text-sm text-slate-700 font-medium flex-1">{globalLang === "zh" ? "推送通知" : "Push Notifications"}</span>
-                      {pushSubscribed
-                        ? <span className="text-xs text-green-600 font-medium">{globalLang === "zh" ? "已开启" : "On"}</span>
-                        : <button onClick={() => { currentUser && registerPush(currentUser.id); }}
-                            className="text-xs text-amber-600 font-medium hover:text-amber-800">{globalLang === "zh" ? "开启" : "Enable"}</button>
-                      }
+                      <button onClick={e => { e.stopPropagation(); if (!pushSubscribed && currentUser) registerPush(currentUser.id); }}
+                        className={`relative w-10 h-5 rounded-full transition-colors ${pushSubscribed ? "bg-amber-500" : "bg-slate-300"}`}>
+                        <span className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${pushSubscribed ? "translate-x-5" : "translate-x-0.5"}`} />
+                      </button>
                     </div>
                     <div className="border-t border-slate-100 my-1" />
                     {/* Sign out */}
