@@ -197,8 +197,9 @@ function wgs84ToGcj02(lat, lng) {
 
 const SUPABASE_URL  = "https://gtgwnvtckrnhzbjodgvd.supabase.co";
 // ── EmailJS config ────────────────────────────────────────────────────────────
-const EMAILJS_SERVICE_ID  = "service_x78l5ad";
-const EMAILJS_TEMPLATE_ID = "template_imrpdcg";
+const EMAILJS_SERVICE_ID         = "service_x78l5ad";
+const EMAILJS_TEMPLATE_ID        = "template_imrpdcg";
+const EMAILJS_WEEKLY_TEMPLATE_ID = "template_weekly";
 const EMAILJS_PUBLIC_KEY  = "PPb7_rwXSmdYMdXFw";
 async function sendFollowUpEmail({ to_email, to_name, dev_title, factory_name, step_name, status_message, dev_image, dev_link }) {
   if (!to_email) return;
@@ -220,6 +221,26 @@ async function sendFollowUpEmail({ to_email, to_name, dev_title, factory_name, s
     console.log("Follow-up email sent to", to_email);
   } catch (err) {
     console.error("EmailJS error:", err);
+  }
+}
+async function sendWeeklySummaryEmail({ to_email, to_name, summary_html, week_label }) {
+  if (!to_email) return;
+  try {
+    if (!window.emailjs) {
+      await new Promise((resolve, reject) => {
+        const s = document.createElement("script");
+        s.src = "https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js";
+        s.onload = () => { window.emailjs.init({ publicKey: EMAILJS_PUBLIC_KEY }); resolve(); };
+        s.onerror = reject;
+        document.head.appendChild(s);
+      });
+    }
+    await window.emailjs.send(EMAILJS_SERVICE_ID, EMAILJS_WEEKLY_TEMPLATE_ID, {
+      to_email, to_name: to_name || "Team", summary_html, week_label,
+    });
+    console.log("Weekly summary sent to", to_email);
+  } catch (err) {
+    console.error("Weekly email error:", err);
   }
 }
 const SUPABASE_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imd0Z3dudnRja3JuaHpiam9kZ3ZkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMyMTAzNDAsImV4cCI6MjA4ODc4NjM0MH0.4-7mYTWKjabHOlvNMuNJ3o_pzhDDoGd_2XFDwIbGvNc";
@@ -1483,6 +1504,49 @@ export default function App() {
         try { sessionStorage.setItem(sentKey, JSON.stringify(newSentIds)); } catch {}
       });
       db.getVisits().then(setVisits);
+
+      // ── Weekly summary email — Mondays only, once per week ──────────────────
+      const cnNow = getChinaNow();
+      const isMonday = cnNow.getUTCDay() === 1; // UTC+8 stored as UTC, day-of-week check
+      if (isMonday && currentUserRef.current?.role === "admin") {
+        const weekKey = "weeklySent_" + getChinaTodayStr();
+        const alreadySent = (() => { try { return sessionStorage.getItem(weekKey) === "1"; } catch { return false; } })();
+        if (!alreadySent) {
+          try { sessionStorage.setItem(weekKey, "1"); } catch {}
+          supabase.from("users").select("id,role,email,full_name").then(({ data: uRows }) => {
+            if (!uRows) return;
+            const admins = uRows.filter(u => u.role === "admin" && u.email);
+            // Build summary — active devs with steps due in next 14 days
+            const activeDevs = newDevs.filter(d => d.status === "open" || d.status === "in_progress");
+            const today = getChinaToday();
+            const in14 = new Date(today.getTime() + 14 * 86400000);
+            let summaryRows = "";
+            activeDevs.forEach(dev => {
+              const latestUpdate = dev.updates?.[0];
+              if (!latestUpdate?.production_steps) return;
+              const upcomingSteps = Object.entries(latestUpdate.production_steps)
+                .filter(([, s]) => s.est_date && !s.completed)
+                .map(([stepId, s]) => {
+                  const due = parseLocalDate(s.est_date);
+                  const diff = Math.ceil((due - today) / 86400000);
+                  const step = PRODUCTION_STEPS.find(p => p.id === stepId);
+                  return { label: step ? step.label : stepId, due, diff, dateStr: s.est_date };
+                })
+                .filter(s => s.due <= in14)
+                .sort((a, b) => a.due - b.due);
+              if (upcomingSteps.length === 0) return;
+              summaryRows += `<tr style="border-bottom:1px solid #eee"><td style="padding:8px 12px;font-weight:bold;vertical-align:top">${dev.title || ""}</td><td style="padding:8px 12px;color:#666;vertical-align:top">${dev.factory_names?.[0] || "—"}</td><td style="padding:8px 12px;vertical-align:top">${upcomingSteps.map(s => `<div style="margin-bottom:4px"><span style="font-size:12px;padding:2px 6px;border-radius:4px;background:${s.diff < 0 ? "#fee2e2" : s.diff <= 3 ? "#fef3c7" : "#dbeafe"};color:${s.diff < 0 ? "#991b1b" : s.diff <= 3 ? "#92400e" : "#1e40af"}">${s.diff < 0 ? `Overdue ${Math.abs(s.diff)}d` : s.diff === 0 ? "Today" : `${s.diff}d`}</span> ${s.label}</div>`).join("")}</td></tr>`;
+            });
+            if (!summaryRows) return; // nothing upcoming, skip email
+            const cn = getChinaNow();
+            const weekLabel = `Week of ${cn.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric", timeZone: "UTC" })}`;
+            const summary_html = `<table style="width:100%;border-collapse:collapse;font-family:Arial,sans-serif;font-size:14px"><thead><tr style="background:#f8fafc"><th style="padding:8px 12px;text-align:left;color:#475569">Development</th><th style="padding:8px 12px;text-align:left;color:#475569">Factory</th><th style="padding:8px 12px;text-align:left;color:#475569">Upcoming Steps</th></tr></thead><tbody>${summaryRows}</tbody></table>`;
+            admins.forEach(admin => {
+              sendWeeklySummaryEmail({ to_email: admin.email, to_name: admin.full_name || "Team", summary_html, week_label: weekLabel });
+            });
+          });
+        }
+      }
     }, 20000);
     // Poll notifications every 10s — guarantees delivery even if Realtime is not working
     const notifInterval = setInterval(() => {
@@ -1799,6 +1863,134 @@ export default function App() {
 // ─────────────────────────────────────────────────────────────────────────────
 // Dashboard
 // ─────────────────────────────────────────────────────────────────────────────
+function StepCalendar({ devs, onViewDev }) {
+  const today = getChinaToday();
+  const [viewYear,  setViewYear]  = useState(today.getUTCFullYear());
+  const [viewMonth, setViewMonth] = useState(today.getUTCMonth());
+  const [selected,  setSelected]  = useState(null); // "YYYY-MM-DD"
+
+  // Build map: dateStr -> [{dev, stepLabel, completed}]
+  const stepsByDate = {};
+  devs.forEach(dev => {
+    if (dev.status === "completed" || dev.status === "cancelled") return;
+    const lu = dev.updates?.[0];
+    if (!lu?.production_steps) return;
+    Object.entries(lu.production_steps).forEach(([stepId, s]) => {
+      if (!s.est_date) return;
+      if (!stepsByDate[s.est_date]) stepsByDate[s.est_date] = [];
+      const step = PRODUCTION_STEPS.find(p => p.id === stepId);
+      stepsByDate[s.est_date].push({ dev, stepLabel: step ? step.label : stepId, completed: !!s.completed });
+    });
+  });
+
+  const firstDay = new Date(Date.UTC(viewYear, viewMonth, 1));
+  const daysInMonth = new Date(Date.UTC(viewYear, viewMonth + 1, 0)).getUTCDate();
+  const startDow = firstDay.getUTCDay(); // 0=Sun
+  const cells = [];
+  for (let i = 0; i < startDow; i++) cells.push(null);
+  for (let d = 1; d <= daysInMonth; d++) cells.push(d);
+
+  const monthName = firstDay.toLocaleDateString("en-GB", { month: "long", year: "numeric", timeZone: "UTC" });
+  const todayStr  = getChinaTodayStr();
+
+  function prevMonth() {
+    if (viewMonth === 0) { setViewYear(y => y - 1); setViewMonth(11); }
+    else setViewMonth(m => m - 1);
+    setSelected(null);
+  }
+  function nextMonth() {
+    if (viewMonth === 11) { setViewYear(y => y + 1); setViewMonth(0); }
+    else setViewMonth(m => m + 1);
+    setSelected(null);
+  }
+
+  const selectedItems = selected ? (stepsByDate[selected] || []) : [];
+
+  return (
+    <div className="space-y-4">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <button onClick={prevMonth} className="p-2 rounded-lg hover:bg-slate-100 text-slate-600 transition-colors">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="15 18 9 12 15 6"/></svg>
+        </button>
+        <span className="font-semibold text-slate-700 text-sm">{monthName}</span>
+        <button onClick={nextMonth} className="p-2 rounded-lg hover:bg-slate-100 text-slate-600 transition-colors">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="9 18 15 12 9 6"/></svg>
+        </button>
+      </div>
+      {/* Day labels */}
+      <div className="grid grid-cols-7 gap-1">
+        {["Sun","Mon","Tue","Wed","Thu","Fri","Sat"].map(d => (
+          <div key={d} className="text-center text-xs font-medium text-slate-400 py-1">{d}</div>
+        ))}
+        {/* Cells */}
+        {cells.map((day, i) => {
+          if (!day) return <div key={"e"+i} />;
+          const mm = String(viewMonth + 1).padStart(2, "0");
+          const dd = String(day).padStart(2, "0");
+          const dateStr = `${viewYear}-${mm}-${dd}`;
+          const items = stepsByDate[dateStr] || [];
+          const isToday = dateStr === todayStr;
+          const isSelected = dateStr === selected;
+          const overdue = items.some(it => !it.completed && parseLocalDate(dateStr) < getChinaToday());
+          const hasIncomplete = items.some(it => !it.completed);
+          return (
+            <div key={dateStr} onClick={() => items.length > 0 ? setSelected(isSelected ? null : dateStr) : null}
+              className={`relative rounded-xl p-1 min-h-[44px] flex flex-col items-center transition-all
+                ${items.length > 0 ? "cursor-pointer hover:bg-slate-50" : ""}
+                ${isSelected ? "ring-2 ring-purple-400 bg-purple-50" : ""}
+                ${isToday ? "bg-amber-50" : ""}`}>
+              <span className={`text-xs font-medium w-6 h-6 flex items-center justify-center rounded-full
+                ${isToday ? "bg-amber-500 text-white" : "text-slate-600"}`}>{day}</span>
+              {items.length > 0 && (
+                <div className="flex gap-0.5 flex-wrap justify-center mt-0.5">
+                  {items.slice(0, 3).map((it, idx) => (
+                    <div key={idx} className={`w-1.5 h-1.5 rounded-full ${it.completed ? "bg-emerald-400" : overdue ? "bg-red-400" : "bg-purple-400"}`} />
+                  ))}
+                  {items.length > 3 && <div className="w-1.5 h-1.5 rounded-full bg-slate-300" />}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+      {/* Legend */}
+      <div className="flex gap-4 text-xs text-slate-500 pt-1">
+        <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-purple-400 inline-block"/>Upcoming</span>
+        <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-red-400 inline-block"/>Overdue</span>
+        <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-emerald-400 inline-block"/>Completed</span>
+      </div>
+      {/* Selected day detail */}
+      {selected && selectedItems.length > 0 && (
+        <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+          <div className="px-4 py-3 border-b border-slate-100 bg-slate-50">
+            <span className="text-sm font-semibold text-slate-700">{fmtDate(selected)} — {selectedItems.length} step{selectedItems.length !== 1 ? "s" : ""}</span>
+          </div>
+          <div className="divide-y divide-slate-100">
+            {selectedItems.map((it, idx) => {
+              const isOver = !it.completed && parseLocalDate(selected) < getChinaToday();
+              return (
+                <div key={idx} onClick={() => onViewDev(it.dev.id)}
+                  className="flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-slate-50 transition-colors">
+                  <div className={`w-2 h-2 rounded-full flex-shrink-0 ${it.completed ? "bg-emerald-400" : isOver ? "bg-red-400" : "bg-purple-400"}`} />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-slate-800 truncate">{it.dev.title}</p>
+                    <p className="text-xs text-slate-500">{it.stepLabel} · {it.dev.factory_names?.[0] || "—"}</p>
+                  </div>
+                  <span className={`text-xs font-medium px-2 py-0.5 rounded-full flex-shrink-0
+                    ${it.completed ? "bg-emerald-100 text-emerald-700" : isOver ? "bg-red-100 text-red-700" : "bg-purple-100 text-purple-700"}`}>
+                    {it.completed ? "Done" : isOver ? "Overdue" : "Upcoming"}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function DashboardPage({ visits, devs, factories, setPage, needsFollowUp, dueSoon, onViewDev, onViewVisit, currentUser }) {
   const isAdmin = currentUser?.role === "admin";
   const isSupplier = currentUser?.role === "supplier";
@@ -1880,6 +2072,10 @@ function DashboardPage({ visits, devs, factories, setPage, needsFollowUp, dueSoo
                   className={`px-4 py-1.5 text-sm font-medium rounded-md transition-all ${bannerTab === "devs" ? "bg-white text-slate-800 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}>
                   {t("recentDevs")}
                 </button>
+                <button onClick={() => { setBannerTab("calendar"); clearInterval(timerRef.current); }}
+                  className={`px-4 py-1.5 text-sm font-medium rounded-md transition-all ${bannerTab === "calendar" ? "bg-white text-slate-800 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}>
+                  📅 Calendar
+                </button>
               </div>
               <button onClick={() => setPage(bannerTab === "visits" ? "visits" : "developments")}
                 className="text-sm text-amber-600 font-medium hover:underline">{t("viewAll")}</button>
@@ -1947,6 +2143,11 @@ function DashboardPage({ visits, devs, factories, setPage, needsFollowUp, dueSoo
                       </Card>
                     );
                   })}
+              </div>
+            )}
+            {bannerTab === "calendar" && (
+              <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-4">
+                <StepCalendar devs={devs} onViewDev={onViewDev} />
               </div>
             )}
           </div>
