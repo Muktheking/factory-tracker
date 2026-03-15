@@ -1262,6 +1262,10 @@ export default function App() {
   const initialLoadDone = useRef(false);
   const [lang, setLang]           = useState("en");
   const [dark, setDark]           = useState(() => { try { return localStorage.getItem("darkMode") === "1"; } catch { return false; } });
+  const [pushSubscribed, setPushSubscribed] = useState(() => { try { return localStorage.getItem("pushSubscribed") === "1"; } catch { return false; } });
+  const [showProfile, setShowProfile] = useState(false);
+  const [showProfileEdit, setShowProfileEdit] = useState(false);
+  const [profileForm, setProfileForm] = useState({});
   const [notifications, setNotifications] = useState([]);
   const [showNotifs, setShowNotifs] = useState(false);
 
@@ -1292,6 +1296,8 @@ export default function App() {
         subscription: subJson,
         updated_at: new Date().toISOString(),
       }, { onConflict: "user_id,endpoint" });
+      try { localStorage.setItem("pushSubscribed", "1"); } catch {}
+      setPushSubscribed(true);
     } catch (err) {
       console.warn("Push registration failed:", err);
     }
@@ -1717,6 +1723,18 @@ export default function App() {
     return () => clearInterval(interval);
   }, [session?.user?.email]); // depend on email string, not session object
 
+  async function saveProfile(updates) {
+    if (!currentUser?.id) return;
+    const { error } = await supabase.from("users").update(updates).eq("id", currentUser.id);
+    if (!error) {
+      setUsers(prev => prev.map(u => u.id === currentUser.id ? { ...u, ...updates } : u));
+      showToast("Profile updated", "ok");
+      setShowProfileEdit(false);
+    } else {
+      showToast("Failed to save", "error");
+    }
+  }
+
   async function signOut() {
     await supabase.auth.signOut();
     setSession(null);
@@ -1870,7 +1888,8 @@ export default function App() {
   }
 
   return (
-    <div data-dark={dark ? "1" : "0"} className={`min-h-screen ${dark ? "bg-slate-950 text-slate-100" : "bg-gradient-to-br from-slate-50 via-slate-50 to-amber-50/20"}`}>
+    <div data-dark={dark ? "1" : "0"} className={`min-h-screen ${dark ? "bg-slate-950 text-slate-100" : "bg-gradient-to-br from-slate-50 via-slate-50 to-amber-50/20"}`}
+      onClick={() => { setShowProfile(false); setShowNotifs(false); }}>
       <style>{`
         [data-dark="1"] .bg-white { background-color: #1e293b !important; }
         [data-dark="1"] .bg-slate-50 { background-color: #1e293b !important; }
@@ -1896,6 +1915,82 @@ export default function App() {
           onConfirm={() => { confirm.onConfirm(); setConfirm(null); }}
           onCancel={() => setConfirm(null)} />
       )}
+      {/* ── Profile Edit Modal ── */}
+      {showProfileEdit && (
+        <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4" onClick={() => setShowProfileEdit(false)}>
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden" onClick={e => e.stopPropagation()}>
+            <div className="px-6 py-4 bg-slate-900 flex items-center justify-between">
+              <h2 className="text-white font-semibold">{globalLang === "zh" ? "编辑个人资料" : "Edit Profile"}</h2>
+              <button onClick={() => setShowProfileEdit(false)} className="text-slate-400 hover:text-white text-xl">✕</button>
+            </div>
+            <div className="p-6 space-y-4">
+              {/* Profile picture */}
+              <div className="flex items-center gap-4">
+                <div className="w-16 h-16 rounded-full overflow-hidden bg-amber-500/20 border-2 border-amber-500/40 flex items-center justify-center flex-shrink-0">
+                  {profileForm.profile_picture
+                    ? <img src={profileForm.profile_picture} alt="" className="w-full h-full object-cover" />
+                    : <span className="text-amber-400 text-2xl font-bold">{currentUser?.full_name?.charAt(0) || "?"}</span>
+                  }
+                </div>
+                <div>
+                  <label className="cursor-pointer px-3 py-1.5 bg-purple-600 hover:bg-purple-700 text-white text-xs font-medium rounded-lg transition-colors">
+                    {globalLang === "zh" ? "上传照片" : "Upload Photo"}
+                    <input type="file" accept="image/*" className="hidden" onChange={e => {
+                      const file = e.target.files[0];
+                      if (!file) return;
+                      const reader = new FileReader();
+                      reader.onload = ev => setProfileForm(f => ({ ...f, profile_picture: ev.target.result }));
+                      reader.readAsDataURL(file);
+                    }} />
+                  </label>
+                  {profileForm.profile_picture && (
+                    <button onClick={() => setProfileForm(f => ({ ...f, profile_picture: "" }))}
+                      className="ml-2 text-xs text-red-500 hover:text-red-700">{globalLang === "zh" ? "移除" : "Remove"}</button>
+                  )}
+                  <p className="text-xs text-slate-400 mt-1">{globalLang === "zh" ? "JPG、PNG，最大2MB" : "JPG, PNG, max 2MB"}</p>
+                </div>
+              </div>
+              {/* Full name */}
+              <div>
+                <label className="text-xs font-semibold text-slate-600 uppercase tracking-wide mb-1 block">{globalLang === "zh" ? "姓名" : "Full Name"}</label>
+                <input type="text" value={profileForm.full_name} onChange={e => setProfileForm(f => ({ ...f, full_name: e.target.value }))}
+                  className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:border-purple-400" />
+              </div>
+              {/* Chinese name */}
+              <div>
+                <label className="text-xs font-semibold text-slate-600 uppercase tracking-wide mb-1 block">{globalLang === "zh" ? "中文名" : "Chinese Name"}</label>
+                <input type="text" value={profileForm.chinese_name} onChange={e => setProfileForm(f => ({ ...f, chinese_name: e.target.value }))}
+                  className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:border-purple-400" />
+              </div>
+              {/* WeChat ID */}
+              <div>
+                <label className="text-xs font-semibold text-slate-600 uppercase tracking-wide mb-1 block">{globalLang === "zh" ? "微信号" : "WeChat ID"}</label>
+                <input type="text" value={profileForm.wechat_id} onChange={e => setProfileForm(f => ({ ...f, wechat_id: e.target.value }))}
+                  className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:border-purple-400" />
+              </div>
+              {/* Birthday */}
+              <div>
+                <label className="text-xs font-semibold text-slate-600 uppercase tracking-wide mb-1 block">{globalLang === "zh" ? "生日" : "Birthday"}</label>
+                <input type="date" value={profileForm.birthday} onChange={e => setProfileForm(f => ({ ...f, birthday: e.target.value }))}
+                  className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:border-purple-400" />
+              </div>
+              {/* Email (read-only) */}
+              <div>
+                <label className="text-xs font-semibold text-slate-600 uppercase tracking-wide mb-1 block">{globalLang === "zh" ? "邮箱（不可修改）" : "Email (read-only)"}</label>
+                <input type="text" value={authEmail} disabled
+                  className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm bg-slate-50 text-slate-400 cursor-not-allowed" />
+              </div>
+            </div>
+            <div className="px-6 pb-5 flex gap-3">
+              <button onClick={() => setShowProfileEdit(false)}
+                className="flex-1 px-4 py-2 border border-slate-200 rounded-xl text-sm font-medium text-slate-600 hover:bg-slate-50 transition-colors">{t("cancel")}</button>
+              <button onClick={() => saveProfile(profileForm)}
+                className="flex-1 px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-xl text-sm font-medium transition-colors">{t("save")}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {showGlobalSearch && (
         <GlobalSearchOverlay
           query={globalQuery} setQuery={setGlobalQuery}
@@ -1916,30 +2011,14 @@ export default function App() {
           </button>
           <div className="flex-1" />
           <div className="flex-shrink-0 flex items-center gap-1.5">
-            {/* Global search */}
+            {/* Search */}
             <button onClick={() => { setShowGlobalSearch(true); setGlobalQuery(""); }}
               className="w-8 h-8 flex items-center justify-center text-slate-400 hover:text-white hover:bg-white/10 rounded-lg transition-colors">
               <svg width="15" height="15" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><circle cx="11" cy="11" r="8"/><path strokeLinecap="round" d="m21 21-4.35-4.35"/></svg>
             </button>
-            <div className="flex items-center bg-white/10 rounded-lg overflow-hidden">
-              {["en","zh"].map(l => (
-                <button key={l} onClick={() => changeLang(l)}
-                  className={`px-2 py-1 text-xs font-bold transition-colors ${lang === l ? "bg-amber-500 text-white" : "text-slate-400 hover:text-white"}`}>
-                  {l === "en" ? "EN" : "中文"}
-                </button>
-              ))}
-            </div>
-            <button onClick={toggleDark}
-              title={dark ? "Light mode" : "Dark mode"}
-              className="w-8 h-8 flex items-center justify-center text-slate-400 hover:text-white hover:bg-white/10 rounded-lg transition-colors">
-              {dark
-                ? <svg width="15" height="15" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><circle cx="12" cy="12" r="5"/><path strokeLinecap="round" d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
-                : <svg width="15" height="15" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
-              }
-            </button>
-            {/* Language switcher */}
+            {/* Notifications bell */}
             <div className="relative">
-              <button onClick={() => setShowNotifs(s => !s)}
+              <button onClick={() => { setShowNotifs(s => !s); setShowProfile(false); }}
                 className="relative w-8 h-8 flex items-center justify-center text-slate-400 hover:text-white hover:bg-white/10 rounded-lg transition-colors">
                 <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                   <path strokeLinecap="round" strokeLinejoin="round" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6 6 0 10-12 0v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
@@ -1953,11 +2032,8 @@ export default function App() {
                   <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100">
                     <span className="font-semibold text-slate-800 text-sm">{t("notifications")}</span>
                     {notifications.length > 0 && (
-                      <button onClick={() => {
-                        db.markAllNotifsRead(currentUser?.id);
-                        setNotifications([]);
-                        setShowNotifs(false);
-                      }} className="text-xs text-slate-400 hover:text-red-500">{t("clearAll")}</button>
+                      <button onClick={() => { db.markAllNotifsRead(currentUser?.id); setNotifications([]); setShowNotifs(false); }}
+                        className="text-xs text-slate-400 hover:text-red-500">{t("clearAll")}</button>
                     )}
                   </div>
                   <div className="max-h-80 overflow-y-auto">
@@ -1974,8 +2050,7 @@ export default function App() {
                             else if (type === "visit") goPage("visits");
                             else if (type === "factory") goPage("factories");
                             else if (type === "pending") goPage("users");
-                          }}
-                            className="w-full text-left px-4 py-3 hover:bg-slate-50 border-b border-slate-50 transition-colors">
+                          }} className="w-full text-left px-4 py-3 hover:bg-slate-50 border-b border-slate-50 transition-colors">
                             <div className="flex items-start gap-2">
                               <span className="text-lg flex-shrink-0">
                                 {n.type === "chat" ? "💬" : n.type === "visit" ? "🏭" : n.type === "factory" ? "🏢" : n.type === "pending" ? "👤" : "🔔"}
@@ -1992,17 +2067,102 @@ export default function App() {
                 </div>
               )}
             </div>
-            <div className="w-8 h-8 rounded-full bg-amber-500/20 border border-amber-500/40 flex items-center justify-center text-amber-400 text-xs font-bold">
-              {currentUser?.full_name?.charAt(0) || authEmail?.charAt(0)?.toUpperCase() || "?"}
+            {/* Profile avatar + dropdown */}
+            <div className="relative">
+              <button onClick={() => { setShowProfile(s => !s); setShowNotifs(false); setShowProfileEdit(false); }}
+                className="flex items-center gap-2 pl-1 pr-2 py-1 rounded-xl hover:bg-white/10 transition-colors">
+                <div className="w-7 h-7 rounded-full overflow-hidden flex-shrink-0 bg-amber-500/20 border border-amber-500/40 flex items-center justify-center">
+                  {currentUser?.profile_picture
+                    ? <img src={currentUser.profile_picture} alt="" className="w-full h-full object-cover" />
+                    : <span className="text-amber-400 text-xs font-bold">{currentUser?.full_name?.charAt(0) || authEmail?.charAt(0)?.toUpperCase() || "?"}</span>
+                  }
+                </div>
+                <div className="hidden sm:flex flex-col items-start">
+                  <span className="text-white text-xs font-medium leading-tight">{currentUser?.full_name || authEmail}</span>
+                  <span className="text-amber-400 text-xs leading-tight capitalize">{currentUser?.role}</span>
+                </div>
+                <svg width="10" height="10" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5} className="text-slate-400 hidden sm:block"><path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7"/></svg>
+              </button>
+              {showProfile && (
+                <div className="absolute right-0 top-11 w-72 bg-white rounded-2xl shadow-2xl border border-slate-100 z-50 overflow-hidden">
+                  {/* Header */}
+                  <div className="px-4 py-4 bg-slate-900 flex items-center gap-3">
+                    <div className="w-12 h-12 rounded-full overflow-hidden flex-shrink-0 bg-amber-500/20 border-2 border-amber-500/40 flex items-center justify-center">
+                      {currentUser?.profile_picture
+                        ? <img src={currentUser.profile_picture} alt="" className="w-full h-full object-cover" />
+                        : <span className="text-amber-400 text-lg font-bold">{currentUser?.full_name?.charAt(0) || "?"}</span>
+                      }
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-white font-semibold text-sm truncate">{currentUser?.full_name || authEmail}</p>
+                      {currentUser?.chinese_name && <p className="text-slate-400 text-xs truncate">{currentUser.chinese_name}</p>}
+                      <span className="inline-block mt-0.5 px-2 py-0.5 bg-amber-500/20 text-amber-400 text-xs rounded-full capitalize">{currentUser?.role}</span>
+                    </div>
+                  </div>
+                  {/* Menu items */}
+                  <div className="py-1">
+                    {/* Edit Profile */}
+                    <button onClick={() => { setShowProfileEdit(true); setProfileForm({ full_name: currentUser?.full_name || "", chinese_name: currentUser?.chinese_name || "", wechat_id: currentUser?.wechat_id || "", birthday: currentUser?.birthday || "", profile_picture: currentUser?.profile_picture || "" }); setShowProfile(false); }}
+                      className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-slate-50 transition-colors text-left">
+                      <span className="w-7 h-7 rounded-lg bg-purple-100 flex items-center justify-center flex-shrink-0">
+                        <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="#7c3aed" strokeWidth={2}><path strokeLinecap="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/></svg>
+                      </span>
+                      <span className="text-sm text-slate-700 font-medium">{globalLang === "zh" ? "编辑个人资料" : "Edit Profile"}</span>
+                    </button>
+                    {/* Language */}
+                    <div className="flex items-center gap-3 px-4 py-2.5">
+                      <span className="w-7 h-7 rounded-lg bg-blue-100 flex items-center justify-center flex-shrink-0">
+                        <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="#2563eb" strokeWidth={2}><path strokeLinecap="round" d="M3 5h12M9 3v2m1.048 9.5A18.022 18.022 0 016.412 9m6.088 9h7M11 21l5-10 5 10M12.751 5C11.783 10.77 8.07 15.61 3 18.129"/></svg>
+                      </span>
+                      <span className="text-sm text-slate-700 font-medium flex-1">{globalLang === "zh" ? "语言" : "Language"}</span>
+                      <div className="flex items-center bg-slate-100 rounded-lg overflow-hidden">
+                        {["en","zh"].map(l => (
+                          <button key={l} onClick={() => changeLang(l)}
+                            className={`px-2.5 py-1 text-xs font-bold transition-colors ${lang === l ? "bg-amber-500 text-white" : "text-slate-500 hover:text-slate-700"}`}>
+                            {l === "en" ? "EN" : "中文"}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    {/* Appearance */}
+                    <div className="flex items-center gap-3 px-4 py-2.5">
+                      <span className="w-7 h-7 rounded-lg bg-amber-100 flex items-center justify-center flex-shrink-0">
+                        {dark
+                          ? <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="#d97706" strokeWidth={2}><circle cx="12" cy="12" r="5"/><path strokeLinecap="round" d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
+                          : <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="#d97706" strokeWidth={2}><path strokeLinecap="round" d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+                        }
+                      </span>
+                      <span className="text-sm text-slate-700 font-medium flex-1">{globalLang === "zh" ? "外观" : "Appearance"}</span>
+                      <button onClick={toggleDark}
+                        className={`relative w-10 h-5 rounded-full transition-colors ${dark ? "bg-amber-500" : "bg-slate-300"}`}>
+                        <span className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${dark ? "translate-x-5" : "translate-x-0.5"}`} />
+                      </button>
+                    </div>
+                    {/* Push notifications */}
+                    <div className="flex items-center gap-3 px-4 py-2.5">
+                      <span className="w-7 h-7 rounded-lg bg-green-100 flex items-center justify-center flex-shrink-0">
+                        <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="#16a34a" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6 6 0 10-12 0v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"/></svg>
+                      </span>
+                      <span className="text-sm text-slate-700 font-medium flex-1">{globalLang === "zh" ? "推送通知" : "Push Notifications"}</span>
+                      {pushSubscribed
+                        ? <span className="text-xs text-green-600 font-medium">{globalLang === "zh" ? "已开启" : "On"}</span>
+                        : <button onClick={() => { currentUser && registerPush(currentUser.id); }}
+                            className="text-xs text-amber-600 font-medium hover:text-amber-800">{globalLang === "zh" ? "开启" : "Enable"}</button>
+                      }
+                    </div>
+                    <div className="border-t border-slate-100 my-1" />
+                    {/* Sign out */}
+                    <button onClick={() => { setShowProfile(false); signOut(); }}
+                      className="w-full flex items-center gap-3 px-4 py-2.5 hover:bg-red-50 transition-colors text-left">
+                      <span className="w-7 h-7 rounded-lg bg-red-100 flex items-center justify-center flex-shrink-0">
+                        <svg width="14" height="14" fill="none" viewBox="0 0 24 24" stroke="#dc2626" strokeWidth={2}><path strokeLinecap="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/></svg>
+                      </span>
+                      <span className="text-sm text-red-600 font-medium">{t("signOut")}</span>
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
-            <div className="hidden lg:flex flex-col items-start">
-              <span className="text-white text-xs font-medium leading-tight">{currentUser?.full_name || authEmail}</span>
-              {currentUser?.role && <span className="text-amber-400 text-xs leading-tight capitalize">{currentUser.role}</span>}
-            </div>
-            <button onClick={signOut}
-              className="ml-1 px-2.5 py-1.5 text-xs font-medium text-slate-400 hover:text-white hover:bg-white/10 rounded-lg transition-colors">
-              {t("signOut")}
-            </button>
           </div>
         </div>
         {/* ── Row 2: Nav tabs ── */}
