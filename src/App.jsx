@@ -1561,6 +1561,18 @@ export default function App() {
     registerPush(currentUser.id, false).catch(() => {});
   }, [currentUser?.id]);
 
+  // Clear app badge whenever the app is focused
+  useEffect(() => {
+    function clearBadge() {
+      if ("serviceWorker" in navigator) {
+        navigator.serviceWorker.ready.then(reg => reg.active?.postMessage("clear-badge")).catch(() => {});
+      }
+    }
+    window.addEventListener("focus", clearBadge);
+    clearBadge();
+    return () => window.removeEventListener("focus", clearBadge);
+  }, []);
+
   // Use a ref so realtime handlers always have latest currentUser
   const currentUserRef = useRef(currentUser);
   useEffect(() => { currentUserRef.current = currentUser; }, [currentUser]);
