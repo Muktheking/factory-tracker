@@ -1434,6 +1434,8 @@ export default function App() {
               const emailSentIds = (() => { try { return JSON.parse(sessionStorage.getItem(emailKey) || "[]"); } catch { return []; } })();
               const emailNotifId = dev.id + "_" + stepId + "_email_" + s.est_date;
               if (!emailSentIds.includes(emailNotifId)) {
+                // Mark as sent immediately before async to prevent duplicates on re-fire
+                try { sessionStorage.setItem(emailKey, JSON.stringify([...emailSentIds, emailNotifId])); } catch {}
                 const statusMsg = daysOverdue === 0
                   ? `Step "${stepLabel}" is due today`
                   : `Step "${stepLabel}" is overdue by ${daysOverdue} day${daysOverdue !== 1 ? "s" : ""}`;
@@ -1442,18 +1444,18 @@ export default function App() {
                 emailRecipients.forEach(rid => {
                   const user = uRows.find(u => u.id === rid);
                   if (user?.email) {
-                    sendFollowUpEmail({
+                    const emailPayload = {
                       to_email: user.email,
                       to_name: user.full_name || "Team",
                       dev_title: dev.title || "",
                       factory_name: dev.factory_names?.[0] || "",
                       step_name: stepLabel,
                       status_message: statusMsg,
-                      dev_image: dev.picture_url || "",
-                    });
+                    };
+                    if (dev.picture_url) emailPayload.dev_image = dev.picture_url;
+                    sendFollowUpEmail(emailPayload);
                   }
                 });
-                try { sessionStorage.setItem(emailKey, JSON.stringify([...emailSentIds, emailNotifId])); } catch {}
               }
             });
           });
