@@ -46,7 +46,7 @@ const TRANSLATIONS = {
     // Factory form
     factoryName: "Factory Name", address: "Address", contactPerson: "Contact Person",
     contactPhone: "Contact Phone", contactEmail: "Contact Email", wechatId: "WeChat ID",
-    mainItems: "Main Items", notes: globalLang === "zh" ? "备注" : "Notes", addItem: "Add Item",
+    mainItems: "Main Items", notes: "Notes", addItem: "Add Item",
     // Users
     userManagement: "User Management", allUsers: "All Users", fullName: "Full Name",
     email: "Email", password: "Password", role: "Role", wechat: "WeChat ID",
