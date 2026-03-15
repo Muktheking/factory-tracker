@@ -74,6 +74,20 @@ const TRANSLATIONS = {
     logFirstVisit: "Log your first factory visit", createFirstDev: "Create your first development request",
     backToVisits: "Back to Visits", backToDevs: "Back to Developments",
     factoryTrackerTitle: "Fashion-Passion", internalUseOnly: "Fashion-Passion · Internal Use Only",
+    // Supplier/Dev view (hardcoded strings)
+    myAssignedDevs: "我的开发任务", assignedToFactory: "分配给您工厂的开发项目",
+    noDevsYet: "暂无开发记录", assignedWillAppear: "分配给您工厂的开发将显示在这里",
+    viewAndUpdate: "查看 & 更新 →",
+    statusHistory: "状态历史", factoryUpdatesCount: "工厂更新",
+    submitUpdate: "提交更新", submitMarkComplete: "✅ 提交并标记完成",
+    noUpdateYet: "暂无更新。使用"提交更新"发布进度。",
+    tickSteps: "请勾选您当前正在进行的步骤",
+    productionSteps: "生产步骤", estOverallFinish: "预计总完成日期",
+    additionalNotes: "附加备注", progressPhotos: "进度照片",
+    specialRemarksLabel: "📋 特殊备注", sellerContactLabel: "销售联系人",
+    teamMemberLabel: "跟进人员", createdLabel: "创建时间", factoriesLabel: "工厂",
+    clientLabel: "客户", done: "✓ 完成", upcoming: "待完成", overdue: "已逾期",
+    darkMode: "深色模式", lightMode: "浅色模式",
   },
   zh: {
     // Nav
@@ -143,6 +157,20 @@ const TRANSLATIONS = {
     logFirstVisit: "记录您的第一次工厂拜访", createFirstDev: "创建第一个开发请求",
     backToVisits: "返回拜访列表", backToDevs: "返回开发列表",
     factoryTrackerTitle: "Fashion-Passion", internalUseOnly: "Fashion-Passion · 仅供内部使用",
+    // Supplier/Dev view (hardcoded strings)
+    myAssignedDevs: "我的开发任务", assignedToFactory: "分配给您工厂的开发项目",
+    noDevsYet: "暂无开发记录", assignedWillAppear: "分配给您工厂的开发将显示在这里",
+    viewAndUpdate: "查看 & 更新 →",
+    statusHistory: "状态历史", factoryUpdatesCount: "工厂更新",
+    submitUpdate: "提交更新", submitMarkComplete: "✅ 提交并标记完成",
+    noUpdateYet: "暂无更新。使用"提交更新"发布进度。",
+    tickSteps: "请勾选您当前正在进行的步骤",
+    productionSteps: "生产步骤", estOverallFinish: "预计总完成日期",
+    additionalNotes: "附加备注", progressPhotos: "进度照片",
+    specialRemarksLabel: "📋 特殊备注", sellerContactLabel: "销售联系人",
+    teamMemberLabel: "跟进人员", createdLabel: "创建时间", factoriesLabel: "工厂",
+    clientLabel: "客户", done: "✓ 完成", upcoming: "待完成", overdue: "已逾期",
+    darkMode: "深色模式", lightMode: "浅色模式",
   }
 };
 let globalLang = "en";
@@ -1190,10 +1218,12 @@ export default function App() {
   const [loading, setLoading]     = useState(true);
   const initialLoadDone = useRef(false);
   const [lang, setLang]           = useState("en");
+  const [dark, setDark]           = useState(() => { try { return localStorage.getItem("darkMode") === "1"; } catch { return false; } });
   const [notifications, setNotifications] = useState([]);
   const [showNotifs, setShowNotifs] = useState(false);
 
   function changeLang(l) { globalLang = l; setLang(l); }
+  function toggleDark() { setDark(d => { const n = !d; try { localStorage.setItem("darkMode", n ? "1" : "0"); } catch {} return n; }); }
 
   // Push a notification to the DB for a specific user (by their users-table id)
   async function pushNotif(recipientId, msgKey, msgData = {}, devId = null, type = "info") {
@@ -1679,7 +1709,7 @@ export default function App() {
   if (detail?.type === "dev") {
     const dev = devs.find((d) => d.id === detail.id);
     if (dev) content = (
-      <DevDetailPage devId={detail.id} devs={devs} setDevs={setDevs} factories={factories}
+      <DevDetailPage dark={dark} devId={detail.id} devs={devs} setDevs={setDevs} factories={factories}
         getFactory={getFactory} getUser={getUser} onBack={() => setDetail(null)}
         currentUser={currentUser} onReminder={() => sendReminder(dev)} showToast={showToast} askConfirm={askConfirm} users={users} pushNotif={pushNotif} pushNotifToMany={pushNotifToMany} />
     );
@@ -1697,14 +1727,14 @@ export default function App() {
     const dashFollowUp = needsFollowUp.filter(d => dashDevs.find(x => x.id === d.id));
     const dashDueSoon  = dueSoon.filter(d => dashDevs.find(x => x.id === d.id));
     content = (
-      <DashboardPage visits={dashVisits} devs={dashDevs} factories={factories} setPage={goPage}
+      <DashboardPage dark={dark} visits={dashVisits} devs={dashDevs} factories={factories} setPage={goPage}
         needsFollowUp={dashFollowUp} dueSoon={dashDueSoon} onViewDev={(id) => setDetail({ type: "dev", id })}
         onViewVisit={(id) => setDetail({ type: "visit", id })} currentUser={currentUser} />
     );
   } else if (page === "visits") {
     const filteredVisits = isAdmin ? visits : visits.filter(v => v.visitor_name === currentUser?.full_name);
     content = (
-      <VisitsPage visits={filteredVisits} setVisits={setVisits} factories={factories} currentUser={currentUser}
+      <VisitsPage dark={dark} visits={filteredVisits} setVisits={setVisits} factories={factories} currentUser={currentUser}
         onView={(id) => setDetail({ type: "visit", id })} showToast={showToast} askConfirm={askConfirm} users={users} pushNotifToMany={pushNotifToMany} />
     );
   } else if (page === "developments") {
@@ -1718,18 +1748,37 @@ export default function App() {
     );
   } else if (page === "factories") {
     content = (
-      <FactoriesPage factories={factories} setFactories={setFactories} currentUser={currentUser}
+      <FactoriesPage dark={dark} factories={factories} setFactories={setFactories} currentUser={currentUser}
         devs={devs} visits={visits} showToast={showToast} askConfirm={askConfirm} users={users} pushNotifToMany={pushNotifToMany} />
     );
   } else if (page === "users") {
     content = (
-      <UsersPage users={users} setUsers={setUsers} factories={factories} currentUser={currentUser}
+      <UsersPage dark={dark} users={users} setUsers={setUsers} factories={factories} currentUser={currentUser}
         showToast={showToast} askConfirm={askConfirm} pushNotif={pushNotif} />
     );
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-slate-50 to-amber-50/20">
+    <div data-dark={dark ? "1" : "0"} className={`min-h-screen ${dark ? "bg-slate-950 text-slate-100" : "bg-gradient-to-br from-slate-50 via-slate-50 to-amber-50/20"}`}>
+      <style>{`
+        [data-dark="1"] .bg-white { background-color: #1e293b !important; }
+        [data-dark="1"] .bg-slate-50 { background-color: #1e293b !important; }
+        [data-dark="1"] .bg-slate-100 { background-color: #1e293b !important; }
+        [data-dark="1"] .bg-slate-200 { background-color: #334155 !important; }
+        [data-dark="1"] .text-slate-800 { color: #f1f5f9 !important; }
+        [data-dark="1"] .text-slate-700 { color: #e2e8f0 !important; }
+        [data-dark="1"] .text-slate-600 { color: #cbd5e1 !important; }
+        [data-dark="1"] .text-slate-500 { color: #94a3b8 !important; }
+        [data-dark="1"] .border-slate-100 { border-color: #334155 !important; }
+        [data-dark="1"] .border-slate-200 { border-color: #334155 !important; }
+        [data-dark="1"] .shadow-sm { box-shadow: 0 1px 3px rgba(0,0,0,0.4) !important; }
+        [data-dark="1"] .hover\:bg-slate-50:hover { background-color: #334155 !important; }
+        [data-dark="1"] .hover\:bg-slate-100:hover { background-color: #334155 !important; }
+        [data-dark="1"] input, [data-dark="1"] textarea, [data-dark="1"] select {
+          background-color: #1e293b !important; color: #f1f5f9 !important; border-color: #475569 !important;
+        }
+        [data-dark="1"] .bg-gradient-to-br { background-image: none !important; background-color: #0f172a !important; }
+      `}</style>
       {toast && <Toast message={toast.message} type={toast.type} />}
       {confirm && (
         <ConfirmDialog message={confirm.message}
@@ -1769,6 +1818,14 @@ export default function App() {
                 </button>
               ))}
             </div>
+            <button onClick={toggleDark}
+              title={dark ? "Light mode" : "Dark mode"}
+              className="w-8 h-8 flex items-center justify-center text-slate-400 hover:text-white hover:bg-white/10 rounded-lg transition-colors">
+              {dark
+                ? <svg width="15" height="15" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><circle cx="12" cy="12" r="5"/><path strokeLinecap="round" d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
+                : <svg width="15" height="15" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+              }
+            </button>
             {/* Language switcher */}
             <div className="relative">
               <button onClick={() => setShowNotifs(s => !s)}
@@ -1979,7 +2036,7 @@ function StepCalendar({ devs, onViewDev }) {
                   </div>
                   <span className={`text-xs font-medium px-2 py-0.5 rounded-full flex-shrink-0
                     ${it.completed ? "bg-emerald-100 text-emerald-700" : isOver ? "bg-red-100 text-red-700" : "bg-purple-100 text-purple-700"}`}>
-                    {it.completed ? "Done" : isOver ? "Overdue" : "Upcoming"}
+                    {it.completed ? t("done") : isOver ? t("overdue") : t("upcoming")}
                   </span>
                 </div>
               );
@@ -1991,7 +2048,7 @@ function StepCalendar({ devs, onViewDev }) {
   );
 }
 
-function DashboardPage({ visits, devs, factories, setPage, needsFollowUp, dueSoon, onViewDev, onViewVisit, currentUser }) {
+function DashboardPage({ dark, visits, devs, factories, setPage, needsFollowUp, dueSoon, onViewDev, onViewVisit, currentUser }) {
   const isAdmin = currentUser?.role === "admin";
   const isSupplier = currentUser?.role === "supplier";
   const [bannerTab, setBannerTab] = useState("visits");
@@ -2017,7 +2074,7 @@ function DashboardPage({ visits, devs, factories, setPage, needsFollowUp, dueSoo
   ].filter(Boolean);
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100">
+    <div className={`min-h-screen ${dark ? "bg-slate-950" : "bg-gradient-to-br from-slate-50 to-slate-100"}`}>
       <div className="bg-slate-800 text-white">
         <div className="max-w-5xl mx-auto px-4 sm:px-6 py-4">
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
@@ -2199,7 +2256,7 @@ function DashboardPage({ visits, devs, factories, setPage, needsFollowUp, dueSoo
 // ─────────────────────────────────────────────────────────────────────────────
 // Visits
 // ─────────────────────────────────────────────────────────────────────────────
-function VisitsPage({ visits, setVisits, factories, currentUser, onView, showToast, askConfirm, users = [], pushNotifToMany }) {
+function VisitsPage({ dark, visits, setVisits, factories, currentUser, onView, showToast, askConfirm, users = [], pushNotifToMany }) {
   const [showForm, setShowForm]       = useState(false);
   const [editingVisit, setEditingVisit] = useState(null);
   const [search, setSearch]           = useState("");
@@ -2286,7 +2343,7 @@ function VisitsPage({ visits, setVisits, factories, currentUser, onView, showToa
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-blue-50/20">
+    <div className={`min-h-screen ${dark ? "bg-slate-950" : "bg-gradient-to-br from-slate-50 to-blue-50/20"}`}>
       <div className="bg-slate-800 text-white">
         <div className="max-w-3xl mx-auto px-4 sm:px-6 py-4">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
@@ -2925,13 +2982,13 @@ function DevelopmentsPage({ devs, setDevs, factories, users, currentUser, onView
     function isNewDev(dev) { return !seenDevIds.includes(dev.id); }
 
     return (
-      <div className="min-h-screen bg-gradient-to-br from-slate-50 to-purple-50/20">
+      <div className={`min-h-screen ${dark ? "bg-slate-950" : "bg-gradient-to-br from-slate-50 to-purple-50/20"}`}>
         <div className="bg-slate-800 text-white">
           <div className="max-w-3xl mx-auto px-4 sm:px-6 py-4">
-            <h1 className="text-xl font-bold">My Assigned Developments</h1>
-            <p className="text-slate-400 mt-0.5 text-xs">Developments assigned to your factory</p>
+            <h1 className="text-xl font-bold">{t("myAssignedDevs")}</h1>
+            <p className="text-slate-400 mt-0.5 text-xs">{t("assignedToFactory")}</p>
             <div className="grid grid-cols-3 gap-3 mt-3">
-              {[["Active", myActive.length, "active"], ["Completed", myDone.length, "done"], ["Total", myDevs.length, null]].map(([label, value, tab]) => (
+              {[[[t("active"), myActive.length, "active"], [t("completed"), myDone.length, "done"], [t("total"), myDevs.length, null]]].map(([label, value, tab]) => (
                 <div key={label} onClick={() => tab && setSupplierTab(tab)}
                   className={`rounded-xl p-3 border transition-all ${tab ? "cursor-pointer hover:bg-white/20" : ""} ${supplierTab === tab ? "bg-amber-500/30 border-amber-400" : "bg-white/10 border-white/10"}`}>
                   <p className="text-lg font-bold">{value}</p>
@@ -2943,7 +3000,7 @@ function DevelopmentsPage({ devs, setDevs, factories, users, currentUser, onView
         </div>
         <div className="max-w-3xl mx-auto px-4 sm:px-6 py-6">
           {supplierList.length === 0
-            ? <EmptyState icon={Icon.flask} title="No developments yet" subtitle="Developments assigned to your factory will appear here" />
+            ? <EmptyState icon={Icon.flask} title={t("noDevsYet")} subtitle={t("assignedWillAppear")} />
             : <div className="space-y-4">
                 {supplierList.map(dev => {
                   const latestUpdate = dev.updates?.slice(-1)[0];
@@ -2994,14 +3051,14 @@ function DevelopmentsPage({ devs, setDevs, factories, users, currentUser, onView
                             const preview = latestUpdate.production_status || latestUpdate.notes || "";
                             return preview ? (
                               <div className="mt-2 p-2 bg-purple-50 rounded-lg border border-purple-100">
-                                <p className="text-xs text-purple-500 uppercase tracking-wide font-semibold mb-0.5">Latest update</p>
+                                <p className="text-xs text-purple-500 uppercase tracking-wide font-semibold mb-0.5">{globalLang === "zh" ? "最新更新" : "Latest update"}</p>
                                 <p className="text-xs text-purple-700">{preview.slice(0, 100)}{preview.length > 100 ? "…" : ""}</p>
                               </div>
                             ) : null;
                           })()}
                           <div className="mt-3 flex items-center justify-between">
                             <p className="text-xs text-slate-400">{fmtDate(dev.created_date)}</p>
-                            <Btn variant="purple" size="sm" onClick={() => { markDevSeen(dev.id); markSeen(dev.id, dev.updates?.[0]?.created_date); onView(dev.id); }}>View & Update →</Btn>
+                            <Btn variant="purple" size="sm" onClick={() => { markDevSeen(dev.id); markSeen(dev.id, dev.updates?.[0]?.created_date); onView(dev.id); }}>{t("viewAndUpdate")}</Btn>
                           </div>
                         </div>
                       </div>
@@ -3016,7 +3073,7 @@ function DevelopmentsPage({ devs, setDevs, factories, users, currentUser, onView
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-purple-50/20">
+    <div className={`min-h-screen ${dark ? "bg-slate-950" : "bg-gradient-to-br from-slate-50 to-purple-50/20"}`}>
       <div className="bg-slate-800 text-white">
         <div className="max-w-3xl mx-auto px-4 sm:px-6 py-4">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
@@ -3458,7 +3515,7 @@ function DevForm({ dev, factories, users, currentUser, onSave, onCancel }) {
   );
 }
 
-function DevDetailPage({ devId, devs, setDevs, factories, getFactory, getUser, onBack, currentUser, onReminder, showToast, askConfirm, users = [], pushNotif, pushNotifToMany }) {
+function DevDetailPage({ dark, devId, devs, setDevs, factories, getFactory, getUser, onBack, currentUser, onReminder, showToast, askConfirm, users = [], pushNotif, pushNotifToMany }) {
   const [showEdit, setShowEdit]           = useState(false);
   const [showUpdateForm, setShowUpdateForm] = useState(false);
   const [activeTab, setActiveTab]         = useState("updates");
@@ -3688,7 +3745,7 @@ function DevDetailPage({ devId, devs, setDevs, factories, getFactory, getUser, o
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-purple-50/20">
+    <div className={`min-h-screen ${dark ? "bg-slate-950" : "bg-gradient-to-br from-slate-50 to-purple-50/20"}`}>
       <div style={{background:"linear-gradient(to right, #1e293b, #334155)",color:"white"}}>
         <div className="max-w-5xl mx-auto px-4 sm:px-6 py-6">
           <button onClick={onBack} className="flex items-center gap-2 text-slate-400 hover:text-white text-sm mb-4 transition-colors">{Icon.back} Back</button>
@@ -3753,7 +3810,7 @@ function DevDetailPage({ devId, devs, setDevs, factories, getFactory, getUser, o
               )}
               <Card className="shadow-sm overflow-hidden">
                 <div className="flex border-b border-slate-100">
-                  {[["updates", t("factoryUpdates")], ["chat", t("chat")], ["history", "Status History"]].map(([v, label]) => (
+                  {[["updates", t("factoryUpdates")], ["chat", t("chat")], ["history", t("statusHistory")]].map(([v, label]) => (
                     <button key={v} onClick={() => setActiveTab(v)}
                       className={`flex-1 py-3 text-sm font-medium transition-colors relative ${activeTab === v ? "text-purple-600 border-b-2 border-purple-500" : "text-slate-500 hover:text-slate-700"}`}>
                       {label}
@@ -3785,7 +3842,7 @@ function DevDetailPage({ devId, devs, setDevs, factories, getFactory, getUser, o
                 {activeTab === "updates" && (
                   <div className="p-5 space-y-4">
                     <div className="flex items-center justify-between">
-                      <h4 className="text-sm font-semibold text-slate-700">Factory Updates ({dev.updates?.length || 0})</h4>
+                      <h4 className="text-sm font-semibold text-slate-700">{t("factoryUpdatesCount")} ({dev.updates?.length || 0})</h4>
                       <div className="flex gap-2">
                         {!isSupplier && <Btn variant="ghost" size="sm" onClick={() => {
                           const fac = getFactory(dev.factory_ids?.[0]);
@@ -3795,7 +3852,7 @@ function DevDetailPage({ devId, devs, setDevs, factories, getFactory, getUser, o
                           setTimeout(() => showToast(`WeChat ID: ${wechatId} — open WeChat and search this ID`, "ok"), 1000);
                         }}>{Icon.wechat} Remind</Btn>}
                         {!isSupplier && <Btn variant="purple" size="sm" onClick={() => setShowUpdateForm((s) => !s)}>{Icon.plus} Add Update</Btn>}
-                        {isSupplier && <Btn variant="purple" size="sm" onClick={() => setShowUpdateForm((s) => !s)}>{Icon.plus} Submit Update</Btn>}
+                        {isSupplier && <Btn variant="purple" size="sm" onClick={() => setShowUpdateForm((s) => !s)}>{Icon.plus} {t("submitUpdate")}</Btn>}
                       </div>
                     </div>
                     {showUpdateForm && <FactoryUpdateForm dev={dev} onSave={saveUpdate} onCancel={() => setShowUpdateForm(false)} />}
@@ -3836,7 +3893,7 @@ function DevDetailPage({ devId, devs, setDevs, factories, getFactory, getUser, o
                       </div>
                     )}
                     {isSupplier && dev.status_history?.some(h => h.status === "supplier_confirmed") && !dev.updates?.length && (
-                      <p className="text-center text-slate-400 text-sm py-8">No updates submitted yet. Use "Submit Update" to post progress.</p>
+                      <p className="text-center text-slate-400 text-sm py-8">{t("noUpdateYet")}</p>
                     )}
                     {!isSupplier && (!dev.updates || dev.updates.length === 0) && (
                       <p className="text-center text-slate-400 text-sm py-8">No factory updates yet.</p>
@@ -3847,7 +3904,7 @@ function DevDetailPage({ devId, devs, setDevs, factories, getFactory, getUser, o
                 {activeTab === "chat" && <DevChat devId={devId} dev={dev} setDevs={setDevs} currentUser={currentUser} users={users} pushNotifToMany={pushNotifToMany} />}
                 {activeTab === "history" && (
                   <div className="p-5 space-y-3">
-                    <h4 className="text-sm font-semibold text-slate-700">Status History</h4>
+                    <h4 className="text-sm font-semibold text-slate-700">{t("statusHistory")}</h4>
                     <div className="relative">
                       <div className="absolute left-3 top-0 bottom-0 w-0.5 bg-slate-200" />
                       {/* Step 1: Created */}
@@ -3903,7 +3960,7 @@ function DevDetailPage({ devId, devs, setDevs, factories, getFactory, getUser, o
                 <h3 className="font-semibold text-slate-800 border-b border-slate-100 pb-2 mb-3 text-sm uppercase tracking-wide">Details</h3>
                 <div className="space-y-3">
                   {[["Item", dev.title], ["Size", dev.size], ["Weight", dev.weight], ["Material", dev.material],
-                    ["Factories", dev.factory_names?.join(", ")], ["Team Member", dev.team_member_name], ["Created", fmtDate(dev.created_date)]
+                    [t("factoriesLabel"), dev.factory_names?.join(", ")], [t("teamMemberLabel"), dev.team_member_name], [t("createdLabel"), fmtDate(dev.created_date)]
                   ].filter(([, v]) => v).map(([label, val]) => (
                     <div key={label}>
                       <label className="text-xs text-slate-500 uppercase tracking-wide font-medium">{label}</label>
@@ -3937,7 +3994,7 @@ function DevDetailPage({ devId, devs, setDevs, factories, getFactory, getUser, o
               )}
               {dev.special_remarks && (
                 <Card className="shadow-sm p-5 border-l-4 border-l-purple-400">
-                  <h3 className="font-semibold text-purple-800 border-b border-purple-100 pb-2 mb-3 text-sm uppercase tracking-wide">📋 Special Remarks</h3>
+                  <h3 className="font-semibold text-purple-800 border-b border-purple-100 pb-2 mb-3 text-sm uppercase tracking-wide">{t("specialRemarksLabel")}</h3>
                   <p className="text-sm text-slate-700 whitespace-pre-wrap">{dev.special_remarks}</p>
                 </Card>
               )}
@@ -3974,7 +4031,7 @@ function DevDetailPage({ devId, devs, setDevs, factories, getFactory, getUser, o
               {isSupplier ? (
                 <>
                   <Card className="shadow-sm p-5">
-                    <h3 className="font-semibold text-slate-800 border-b border-slate-100 pb-2 mb-3 text-sm uppercase tracking-wide">Seller Contact</h3>
+                    <h3 className="font-semibold text-slate-800 border-b border-slate-100 pb-2 mb-3 text-sm uppercase tracking-wide">{t("sellerContactLabel")}</h3>
                     {(() => {
                       const seller = getUser(dev.team_member_id);
                       return seller ? (
@@ -4106,14 +4163,14 @@ function FactoryUpdateForm({ dev, onSave, onCancel }) {
       {/* Header */}
       <div className="bg-gradient-to-r from-purple-600 to-purple-700 px-5 py-4">
         <h4 className="text-white font-semibold text-base">Submit Production Update</h4>
-        <p className="text-purple-200 text-xs mt-0.5">Tick the steps you are currently working on</p>
+        <p className="text-purple-200 text-xs mt-0.5">{t("tickSteps")}</p>
       </div>
 
       <div className="p-5 space-y-5">
         {/* Production Steps Checklist */}
         <div>
           <div className="flex items-center justify-between mb-3">
-            <label className="text-xs font-semibold text-slate-600 uppercase tracking-wide">Production Steps</label>
+            <label className="text-xs font-semibold text-slate-600 uppercase tracking-wide">{t("productionSteps")}</label>
             {checkedCount > 0 && <span className="text-xs bg-purple-100 text-purple-700 px-2 py-0.5 rounded-full font-medium">{checkedCount} selected</span>}
           </div>
           {stepError && <p className="text-xs text-red-500 mb-2">{stepError}</p>}
@@ -4150,7 +4207,7 @@ function FactoryUpdateForm({ dev, onSave, onCancel }) {
         {/* Est. Finish Date + Price */}
         <div className="grid grid-cols-2 gap-3">
           <div>
-            <label className="text-xs font-semibold text-slate-600 uppercase tracking-wide mb-1 block">Est. Overall Finish Date</label>
+            <label className="text-xs font-semibold text-slate-600 uppercase tracking-wide mb-1 block">{t("estOverallFinish")}</label>
             <input type="date" min={today} value={form.estimated_finish_date}
               onChange={e => setFinishDate(e.target.value)}
               className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm text-slate-700 bg-white focus:outline-none focus:border-purple-400" />
@@ -4168,7 +4225,7 @@ function FactoryUpdateForm({ dev, onSave, onCancel }) {
 
         {/* Notes */}
         <div>
-          <label className="text-xs font-semibold text-slate-600 uppercase tracking-wide mb-1 block">Additional Notes</label>
+          <label className="text-xs font-semibold text-slate-600 uppercase tracking-wide mb-1 block">{t("additionalNotes")}</label>
           <textarea value={form.notes} onChange={e => set("notes", e.target.value)}
             placeholder="Any additional information…" rows={2}
             className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm resize-none focus:outline-none focus:border-purple-400" />
@@ -4176,7 +4233,7 @@ function FactoryUpdateForm({ dev, onSave, onCancel }) {
 
         {/* Progress Photos */}
         <div>
-          <label className="text-xs font-semibold text-slate-600 uppercase tracking-wide mb-1 block">Progress Photos</label>
+          <label className="text-xs font-semibold text-slate-600 uppercase tracking-wide mb-1 block">{t("progressPhotos")}</label>
           <label className="flex items-center justify-center h-10 border-2 border-dashed border-slate-200 rounded-xl cursor-pointer hover:border-purple-400 hover:bg-purple-50/50 transition-all">
             <input type="file" accept="image/*" multiple onChange={addImages} className="hidden" />
             <span className="flex items-center gap-2 text-sm text-slate-500">{Icon.upload} Add photos</span>
@@ -4193,9 +4250,9 @@ function FactoryUpdateForm({ dev, onSave, onCancel }) {
         {/* Actions */}
         <div className="flex justify-end gap-2 pt-1 border-t border-slate-100">
           <Btn variant="outline" size="sm" onClick={onCancel}>Cancel</Btn>
-          <Btn variant="purple" size="sm" onClick={() => handleSubmit(false)}>{Icon.check} Submit Update</Btn>
+          <Btn variant="purple" size="sm" onClick={() => handleSubmit(false)}>{Icon.check} {t("submitUpdate")}</Btn>
           <Btn variant="ghost" size="sm" className="bg-green-50 text-green-700 border border-green-200 hover:bg-green-100"
-            onClick={() => handleSubmit(true)}>✅ Submit & Mark Complete</Btn>
+            onClick={() => handleSubmit(true)}>{t("submitMarkComplete")}</Btn>
         </div>
       </div>
     </div>
@@ -4291,7 +4348,7 @@ function UpdateCard({ update, isSupplier, onEditStep }) {
                         </div>
                         <span className="text-xs mr-0.5">{step.icon}</span>
                         <span className={`text-sm font-medium ${isDone ? "text-green-800 line-through opacity-70" : isOverdue ? "text-red-800" : "text-purple-800"}`}>{step.label}</span>
-                        {isDone && <span className="text-xs bg-green-100 text-green-700 px-1.5 py-0.5 rounded-full font-medium">✓ Done</span>}
+                        {isDone && <span className="text-xs bg-green-100 text-green-700 px-1.5 py-0.5 rounded-full font-medium">{t("done")}</span>}
                       </div>
                       <div className="flex items-center gap-2">
                         {s.est_date && !isDone && (
@@ -4453,7 +4510,7 @@ function DevChat({ devId, dev, setDevs, currentUser, users = [], pushNotifToMany
 // ─────────────────────────────────────────────────────────────────────────────
 // Factories
 // ─────────────────────────────────────────────────────────────────────────────
-function FactoriesPage({ factories, setFactories, currentUser, devs = [], visits = [], showToast, askConfirm, users = [], pushNotifToMany }) {
+function FactoriesPage({ dark, factories, setFactories, currentUser, devs = [], visits = [], showToast, askConfirm, users = [], pushNotifToMany }) {
   const [showForm, setShowForm]           = useState(false);
   const [editingFactory, setEditingFactory] = useState(null);
   const [search, setSearch]               = useState("");
@@ -4491,7 +4548,7 @@ function FactoriesPage({ factories, setFactories, currentUser, devs = [], visits
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-amber-50/30">
+    <div className={`min-h-screen ${dark ? "bg-slate-950" : "bg-gradient-to-br from-slate-50 to-amber-50/30"}`}>
       <div className="bg-slate-800 text-white">
         <div className="max-w-3xl mx-auto px-4 sm:px-6 py-4">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
@@ -4648,7 +4705,7 @@ function FactoryForm({ fac, onSave, onCancel }) {
 // ─────────────────────────────────────────────────────────────────────────────
 // Users
 // ─────────────────────────────────────────────────────────────────────────────
-function UsersPage({ users, setUsers, factories, currentUser, showToast, askConfirm, pushNotif }) {
+function UsersPage({ dark, users, setUsers, factories, currentUser, showToast, askConfirm, pushNotif }) {
   const [editingId, setEditingId] = useState(null);
   const [editName, setEditName]   = useState("");
   const [editChineseName, setEditChineseName] = useState("");
@@ -4823,7 +4880,7 @@ function UsersPage({ users, setUsers, factories, currentUser, showToast, askConf
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100">
+    <div className={`min-h-screen ${dark ? "bg-slate-950" : "bg-gradient-to-br from-slate-50 to-slate-100"}`}>
       <div className="bg-slate-800 text-white">
         <div className="max-w-3xl mx-auto px-4 sm:px-6 py-4">
           <div className="flex items-center justify-between gap-3 mb-4">
