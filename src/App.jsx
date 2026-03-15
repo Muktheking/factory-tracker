@@ -2018,7 +2018,7 @@ export default function App() {
             </button>
             {/* Notifications bell */}
             <div className="relative">
-              <button onClick={() => { setShowNotifs(s => !s); setShowProfile(false); }}
+              <button onClick={e => { e.stopPropagation(); setShowNotifs(s => !s); setShowProfile(false); }}
                 className="relative w-8 h-8 flex items-center justify-center text-slate-400 hover:text-white hover:bg-white/10 rounded-lg transition-colors">
                 <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                   <path strokeLinecap="round" strokeLinejoin="round" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6 6 0 10-12 0v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
@@ -2028,7 +2028,7 @@ export default function App() {
                 )}
               </button>
               {showNotifs && (
-                <div className="absolute right-0 top-10 w-80 bg-white rounded-2xl shadow-2xl border border-slate-100 z-50 overflow-hidden">
+                <div className="absolute right-0 top-10 w-80 bg-white rounded-2xl shadow-2xl border border-slate-100 z-50 overflow-hidden" onClick={e => e.stopPropagation()}>
                   <div className="flex items-center justify-between px-4 py-3 border-b border-slate-100">
                     <span className="font-semibold text-slate-800 text-sm">{t("notifications")}</span>
                     {notifications.length > 0 && (
@@ -2069,7 +2069,7 @@ export default function App() {
             </div>
             {/* Profile avatar + dropdown */}
             <div className="relative">
-              <button onClick={() => { setShowProfile(s => !s); setShowNotifs(false); setShowProfileEdit(false); }}
+              <button onClick={e => { e.stopPropagation(); setShowProfile(s => !s); setShowNotifs(false); setShowProfileEdit(false); }}
                 className="flex items-center gap-2 pl-1 pr-2 py-1 rounded-xl hover:bg-white/10 transition-colors">
                 <div className="w-7 h-7 rounded-full overflow-hidden flex-shrink-0 bg-amber-500/20 border border-amber-500/40 flex items-center justify-center">
                   {currentUser?.profile_picture
@@ -2084,7 +2084,7 @@ export default function App() {
                 <svg width="10" height="10" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5} className="text-slate-400 hidden sm:block"><path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7"/></svg>
               </button>
               {showProfile && (
-                <div className="absolute right-0 top-11 w-72 bg-white rounded-2xl shadow-2xl border border-slate-100 z-50 overflow-hidden">
+                <div className="absolute right-0 top-11 w-72 bg-white rounded-2xl shadow-2xl border border-slate-100 z-50 overflow-hidden" onClick={e => e.stopPropagation()}>
                   {/* Header */}
                   <div className="px-4 py-4 bg-slate-900 flex items-center gap-3">
                     <div className="w-12 h-12 rounded-full overflow-hidden flex-shrink-0 bg-amber-500/20 border-2 border-amber-500/40 flex items-center justify-center">
