@@ -200,7 +200,7 @@ const SUPABASE_URL  = "https://gtgwnvtckrnhzbjodgvd.supabase.co";
 const EMAILJS_SERVICE_ID  = "service_x78l5ad";
 const EMAILJS_TEMPLATE_ID = "template_imrpdcg";
 const EMAILJS_PUBLIC_KEY  = "PPb7_rwXSmdYMdXFw";
-async function sendFollowUpEmail({ to_email, to_name, dev_title, factory_name, step_name, status_message }) {
+async function sendFollowUpEmail({ to_email, to_name, dev_title, factory_name, step_name, status_message, dev_image }) {
   if (!to_email) return;
   try {
     if (!window.emailjs) {
@@ -214,6 +214,7 @@ async function sendFollowUpEmail({ to_email, to_name, dev_title, factory_name, s
     }
     await window.emailjs.send(EMAILJS_SERVICE_ID, EMAILJS_TEMPLATE_ID, {
       to_email, to_name: to_name || "Team", dev_title, factory_name, step_name, status_message,
+      dev_image: dev_image || "",
     });
     console.log("Follow-up email sent to", to_email);
   } catch (err) {
@@ -1448,6 +1449,7 @@ export default function App() {
                       factory_name: dev.factory_names?.[0] || "",
                       step_name: stepLabel,
                       status_message: statusMsg,
+                      dev_image: dev.picture_url || "",
                     });
                   }
                 });
