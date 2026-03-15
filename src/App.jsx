@@ -273,6 +273,9 @@ async function sendWeeklySummaryEmail({ to_email, to_name, summary_html, week_la
 }
 const SUPABASE_ANON = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imd0Z3dudnRja3JuaHpiam9kZ3ZkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzMyMTAzNDAsImV4cCI6MjA4ODc4NjM0MH0.4-7mYTWKjabHOlvNMuNJ3o_pzhDDoGd_2XFDwIbGvNc";
 const supabase = createClient(SUPABASE_URL, SUPABASE_ANON);
+// VAPID public key — generate once with: npx web-push generate-vapid-keys
+// Then set VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY, VAPID_SUBJECT in Supabase secrets
+const VAPID_PUBLIC_KEY = "BOymcB5Ldv_zN-IQQ2LosmYLCbK09S0B45ecFYg4zUsoZOV56HysYwauOploKMoo8b7IAuhTaE29OO0M2Yib3Zw";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // EXPORT TO EXCEL — uses SheetJS loaded from CDN
@@ -1265,7 +1268,69 @@ export default function App() {
   function changeLang(l) { globalLang = l; setLang(l); }
   function toggleDark() { setDark(d => { const n = !d; try { localStorage.setItem("darkMode", n ? "1" : "0"); } catch {} return n; }); }
 
+  // ── PWA Service Worker + Push Subscription ─────────────────────────────────
+  async function registerPush(userId) {
+    if (!("serviceWorker" in navigator) || !("PushManager" in window)) return;
+    try {
+      const reg = await navigator.serviceWorker.register("/sw.js");
+      await navigator.serviceWorker.ready;
+      const permission = await Notification.requestPermission();
+      if (permission !== "granted") return;
+      // Check if already subscribed
+      let sub = await reg.pushManager.getSubscription();
+      if (!sub) {
+        sub = await reg.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY),
+        });
+      }
+      // Save subscription to DB
+      const subJson = sub.toJSON();
+      await supabase.from("push_subscriptions").upsert({
+        user_id: userId,
+        endpoint: subJson.endpoint,
+        subscription: subJson,
+        updated_at: new Date().toISOString(),
+      }, { onConflict: "user_id,endpoint" });
+    } catch (err) {
+      console.warn("Push registration failed:", err);
+    }
+  }
+
+  function urlBase64ToUint8Array(base64String) {
+    const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
+    const base64 = (base64String + padding).replace(/-/g, "+").replace(/_/g, "/");
+    const rawData = atob(base64);
+    return Uint8Array.from([...rawData].map((c) => c.charCodeAt(0)));
+  }
+
+  async function sendPushToUser(userId, title, body, url = "/") {
+    try {
+      await supabase.functions.invoke("send-push", {
+        body: { user_id: userId, title, body, url },
+      });
+    } catch (err) {
+      console.warn("Push send failed:", err);
+    }
+  }
+
   // Push a notification to the DB for a specific user (by their users-table id)
+  function renderNotifMsgRaw(msgKey, msgData = {}) {
+    const d = msgData;
+    if (msgKey === "newDev") return `New development: ${d.title || ""}`;
+    if (msgKey === "devAssigned") return `You've been assigned to: ${d.title || ""}`;
+    if (msgKey === "newMsg") return `New message in ${d.title || "a development"}`;
+    if (msgKey === "supplierConfirmed") return `Supplier confirmed: ${d.title || ""}`;
+    if (msgKey === "supplierUpdate") return `Factory update on: ${d.title || ""}`;
+    if (msgKey === "newVisit") return `New visit logged at ${d.factory || ""}`;
+    if (msgKey === "factoryAdded") return `Factory added: ${d.name || ""}`;
+    if (msgKey === "infoEdited") return `Info updated: ${d.name || ""}`;
+    if (msgKey === "stepDueToday") return `Step due today: ${d.step || ""} — ${d.title || ""}`;
+    if (msgKey === "stepOverdue") return `Overdue ${d.days || ""}d: ${d.step || ""} — ${d.title || ""}`;
+    if (msgKey === "newPendingUser") return `New user pending approval: ${d.name || ""}`;
+    return msgKey;
+  }
+
   async function pushNotif(recipientId, msgKey, msgData = {}, devId = null, type = "info") {
     if (!recipientId) return;
     const n = {
@@ -1279,6 +1344,11 @@ export default function App() {
       created_at: new Date().toISOString(),
     };
     await db.insertNotif(n);
+    // Also fire a push notification to the recipient's devices
+    const notifTitle = "Fashion-Passion";
+    const notifBody = renderNotifMsgRaw(msgKey, msgData);
+    const notifUrl = devId ? `/#dev=${devId}` : "/";
+    sendPushToUser(recipientId, notifTitle, notifBody, notifUrl).catch(() => {});
   }
 
   // Push to multiple recipients at once
@@ -1444,12 +1514,13 @@ export default function App() {
   const authEmail   = session?.user?.email;
   const currentUser = users.find((u) => u.email?.toLowerCase() === authEmail?.toLowerCase()) || null;
 
-  // Load notifications from DB when user is identified
+  // Load notifications from DB when user is identified + register push
   const notifsLoadedRef = useRef(false);
   useEffect(() => {
     if (!currentUser?.id || notifsLoadedRef.current) return;
     notifsLoadedRef.current = true;
     db.getNotifs(currentUser.id).then(rows => setNotifications(rows));
+    registerPush(currentUser.id).catch(() => {});
   }, [currentUser?.id]);
 
   // Use a ref so realtime handlers always have latest currentUser
