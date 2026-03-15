@@ -1439,11 +1439,13 @@ export default function App() {
                 const statusMsg = daysOverdue === 0
                   ? `Step "${stepLabel}" is due today`
                   : `Step "${stepLabel}" is overdue by ${daysOverdue} day${daysOverdue !== 1 ? "s" : ""}`;
+                const seenEmails = new Set();
                 const emailRecipients = [dev.team_member_id, dev.assigned_user_id]
                   .filter((id, i, arr) => id && arr.indexOf(id) === i);
                 emailRecipients.forEach(rid => {
                   const user = uRows.find(u => u.id === rid);
-                  if (user?.email) {
+                  if (user?.email && !seenEmails.has(user.email)) {
+                    seenEmails.add(user.email);
                     const emailPayload = {
                       to_email: user.email,
                       to_name: user.full_name || "Team",
