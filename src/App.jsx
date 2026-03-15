@@ -1471,7 +1471,7 @@ export default function App() {
           const latestUpdate = dev.updates?.[0];
           if (!latestUpdate?.production_steps) return;
           Object.entries(latestUpdate.production_steps).forEach(([stepId, s]) => {
-            if (!s.est_date) return;
+            if (!s.est_date || s.completed) return;
             const due = parseLocalDate(s.est_date);
             const daysOverdue = Math.floor((today - due) / 86400000);
             if (daysOverdue < 0) return;
