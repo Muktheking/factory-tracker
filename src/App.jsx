@@ -1742,7 +1742,7 @@ export default function App() {
       ? devs.filter(d => d.factory_ids?.includes(currentUser?.factory_id))
       : devs.filter(d => d.team_member_id === currentUser?.id);
     content = (
-      <DevelopmentsPage devs={filteredDevs} setDevs={setDevs} factories={factories} users={users}
+      <DevelopmentsPage dark={dark} devs={filteredDevs} setDevs={setDevs} factories={factories} users={users}
         currentUser={currentUser} onView={(id) => setDetail({ type: "dev", id })}
         showToast={showToast} onNotify={notifyFactory} askConfirm={askConfirm} pushNotif={pushNotif} pushNotifToMany={pushNotifToMany} />
     );
@@ -2819,7 +2819,7 @@ function VisitDetailPage({ visitId, visits, setVisits, factories, onBack, curren
 // ─────────────────────────────────────────────────────────────────────────────
 // Developments
 // ─────────────────────────────────────────────────────────────────────────────
-function DevelopmentsPage({ devs, setDevs, factories, users, currentUser, onView, showToast, onNotify, askConfirm, pushNotif, pushNotifToMany }) {
+function DevelopmentsPage({ dark, devs, setDevs, factories, users, currentUser, onView, showToast, onNotify, askConfirm, pushNotif, pushNotifToMany }) {
   const [showForm, setShowForm]     = useState(false);
   const [editingDev, setEditingDev] = useState(null);
   const [search, setSearch]         = useState("");
