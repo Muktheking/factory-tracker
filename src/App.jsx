@@ -46,7 +46,7 @@ const TRANSLATIONS = {
     // Factory form
     factoryName: "Factory Name", address: "Address", contactPerson: "Contact Person",
     contactPhone: "Contact Phone", contactEmail: "Contact Email", wechatId: "WeChat ID",
-    mainItems: "Main Items", notes: "Notes", addItem: "Add Item",
+    mainItems: "Main Items", notes: globalLang === "zh" ? "备注" : "Notes", addItem: "Add Item",
     // Users
     userManagement: "User Management", allUsers: "All Users", fullName: "Full Name",
     email: "Email", password: "Password", role: "Role", wechat: "WeChat ID",
@@ -446,6 +446,40 @@ const DEV_STATUS_CSS = {
 };
 const DEV_STATUS_LABEL = () => ({ pending: t("pending") || "Pending", open: t("open"), in_progress: t("inProgress"), completed: t("completed"), cancelled: t("cancelled") });
 const MAT_LABEL = { not_started: "Not Started", sourcing: "Sourcing", ordered: "Ordered", received: "Received", unavailable: "Unavailable" };
+const PRODUCTION_STEPS_EN = {
+  original_sample:   "Waiting for Original Sample",
+  sourcing_materials:"Sourcing Materials",
+  waiting_materials: "Waiting for Materials",
+  open_mold:         "Open Mold",
+  printing:          "Printing",
+  dyeing_fabric:     "Dyeing Fabric",
+  embroidery:        "Making Embroidery",
+  lab_dips:          "Arranging Lab Dips",
+  metal_plating:     "Metal Plating",
+  washing:           "Washing",
+  quilting:          "Quilting",
+  stitching:         "Stitching",
+  assembly:          "Assembling",
+  revising_sample:   "Revising Sample",
+  waiting_client:    "Waiting for Client Confirmation",
+};
+const PRODUCTION_STEPS_ZH = {
+  original_sample:   "等待原版样品",
+  sourcing_materials:"采购材料",
+  waiting_materials: "等待材料",
+  open_mold:         "开模",
+  printing:          "印刷",
+  dyeing_fabric:     "染色",
+  embroidery:        "刺绣制作",
+  lab_dips:          "安排试色",
+  metal_plating:     "电镀",
+  washing:           "水洗",
+  quilting:          "绗缝",
+  stitching:         "缝制",
+  assembly:          "组装",
+  revising_sample:   "修改样品",
+  waiting_client:    "等待客户确认",
+};
 const PRODUCTION_STEPS = [
   { id: "original_sample",   label: "Waiting for Original Sample",  icon: "🔬" },
   { id: "sourcing_materials",label: "Sourcing Materials",           icon: "🔍" },
@@ -463,6 +497,9 @@ const PRODUCTION_STEPS = [
   { id: "revising_sample",   label: "Revising Sample",              icon: "✏️" },
   { id: "waiting_client",    label: "Waiting for Client Confirmation", icon: "🤝" },
 ];
+function getStepLabel(id) {
+  return (globalLang === "zh" ? PRODUCTION_STEPS_ZH[id] : PRODUCTION_STEPS_EN[id]) || id;
+}
 const ROLE_CSS  = { admin: "bg-purple-100 text-purple-700", user: "bg-blue-100 text-blue-700", supplier: "bg-orange-100 text-orange-700", viewer: "bg-teal-100 text-teal-700" };
 
 function genId(prefix) {
@@ -509,9 +546,12 @@ function daysAgo(d) {
 }
 function fmtDate(d, withTime) {
   if (!d) return "—";
-  const opts = { day: "2-digit", month: "short", year: "numeric" };
+  const locale = globalLang === "zh" ? "zh-CN" : "en-GB";
+  const opts = globalLang === "zh"
+    ? { year: "numeric", month: "2-digit", day: "2-digit" }
+    : { day: "2-digit", month: "short", year: "numeric" };
   if (withTime) { opts.hour = "2-digit"; opts.minute = "2-digit"; }
-  return new Date(d).toLocaleDateString("en-GB", opts);
+  return new Date(d).toLocaleDateString(locale, opts);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1936,7 +1976,7 @@ function StepCalendar({ devs, onViewDev }) {
       if (!s.est_date) return;
       if (!stepsByDate[s.est_date]) stepsByDate[s.est_date] = [];
       const step = PRODUCTION_STEPS.find(p => p.id === stepId);
-      stepsByDate[s.est_date].push({ dev, stepLabel: step ? step.label : stepId, completed: !!s.completed });
+      stepsByDate[s.est_date].push({ dev, stepLabel: getStepLabel(step ? step.id : stepId), completed: !!s.completed });
     });
   });
 
@@ -2988,7 +3028,7 @@ function DevelopmentsPage({ dark, devs, setDevs, factories, users, currentUser, 
             <h1 className="text-xl font-bold">{t("myAssignedDevs")}</h1>
             <p className="text-slate-400 mt-0.5 text-xs">{t("assignedToFactory")}</p>
             <div className="grid grid-cols-3 gap-3 mt-3">
-              {[[[t("active"), myActive.length, "active"], [t("completed"), myDone.length, "done"], [t("total"), myDevs.length, null]]].map(([label, value, tab]) => (
+              {[[t("active"), myActive.length, "active"], [t("completed"), myDone.length, "done"], [t("total"), myDevs.length, null]].map(([label, value, tab]) => (
                 <div key={label} onClick={() => tab && setSupplierTab(tab)}
                   className={`rounded-xl p-3 border transition-all ${tab ? "cursor-pointer hover:bg-white/20" : ""} ${supplierTab === tab ? "bg-amber-500/30 border-amber-400" : "bg-white/10 border-white/10"}`}>
                   <p className="text-lg font-bold">{value}</p>
@@ -3288,7 +3328,7 @@ function DevCard({ dev, onEdit, onDelete, onView, hasNewUpdate, hasBeenEdited })
                   return (
                     <div key={id} className={`flex items-center gap-1.5 px-2 py-1 rounded-lg text-xs font-medium border ${isOverdue ? "bg-red-50 text-red-700 border-red-200" : isToday ? "bg-amber-50 text-amber-700 border-amber-200" : "bg-purple-50 text-purple-700 border-purple-100"}`}>
                       <span>{step.icon}</span>
-                      <span className="font-semibold">{step.label}</span>
+                      <span className="font-semibold">{getStepLabel(step.id)}</span>
                       {timeLabel && <><span className="opacity-40">·</span><span>{timeLabel}</span></>}
                     </div>
                   );
@@ -3454,13 +3494,13 @@ function DevForm({ dev, factories, users, currentUser, onSave, onCancel }) {
           ))}
         </div>
       </div>
-      <div><Label>Special Remarks</Label><Textarea value={form.special_remarks} onChange={(e) => set("special_remarks", e.target.value)} placeholder="Instructions for factories…" /></div>
-      <PhotoUpload url={form.picture_url} onChange={(v) => set("picture_url", v)} label="Reference Photo" />
+      <div><Label>{t("specialRemarks")}</Label><Textarea value={form.special_remarks} onChange={(e) => set("special_remarks", e.target.value)} placeholder="Instructions for factories…" /></div>
+      <PhotoUpload url={form.picture_url} onChange={(v) => set("picture_url", v)} label={globalLang === "zh" ? "参考图片" : "Reference Photo"} />
       <div>
-        <Label>Additional Reference Photos</Label>
+        <Label>{globalLang === "zh" ? "附加参考图片" : "Additional Reference Photos"}</Label>
         <label className="flex items-center justify-center h-11 border-2 border-dashed border-slate-200 rounded-xl cursor-pointer hover:border-amber-400 hover:bg-amber-50/50 transition-all">
           <input type="file" accept="image/*" multiple onChange={addImages} className="hidden" />
-          <span className="flex items-center gap-2 text-sm text-slate-500">{Icon.upload} Add photos</span>
+          <span className="flex items-center gap-2 text-sm text-slate-500">{Icon.upload} {globalLang === "zh" ? "添加照片" : "Add photos"}</span>
         </label>
         {form.additional_pictures?.length > 0 && (
           <div className="grid grid-cols-4 gap-2 mt-2">
@@ -3597,7 +3637,7 @@ function DevDetailPage({ dark, devId, devs, setDevs, factories, getFactory, getU
         // Notify admins + team member + assigned user
         if (pushNotifToMany) {
           const step = PRODUCTION_STEPS.find(p => p.id === stepId);
-          const stepLabel = step?.label || stepId;
+          const stepLabel = getStepLabel(stepId);
           const recipientIds = [
             ...users.filter(u => u.role === "admin").map(u => u.id),
             dev.team_member_id,
@@ -4185,12 +4225,12 @@ function FactoryUpdateForm({ dev, onSave, onCancel }) {
                       {isChecked && <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>}
                     </div>
                     <span className="text-base mr-1">{step.icon}</span>
-                    <span className={`text-sm font-medium flex-1 ${isChecked ? "text-purple-800" : "text-slate-600"}`}>{step.label}</span>
+                    <span className={`text-sm font-medium flex-1 ${isChecked ? "text-purple-800" : "text-slate-600"}`}>{getStepLabel(step.id)}</span>
                   </div>
                   {isChecked && (
                     <div className="px-3 pb-3">
                       <div className="ml-8">
-                        <label className="text-xs text-purple-600 font-medium mb-1 block">Estimated completion date for this step</label>
+                        <label className="text-xs text-purple-600 font-medium mb-1 block">{globalLang === "zh" ? "该步骤预计完成日期" : "Estimated completion date for this step"}</label>
                         <input type="date" min={today} value={stepData?.est_date || ""}
                           onChange={e => setStepDate(step.id, e.target.value)}
                           className="w-full px-3 py-1.5 border border-purple-200 rounded-lg text-sm text-slate-700 bg-white focus:outline-none focus:border-purple-400" />
@@ -4215,7 +4255,7 @@ function FactoryUpdateForm({ dev, onSave, onCancel }) {
           </div>
           {isFirstUpdate && (
             <div>
-              <label className="text-xs font-semibold text-slate-600 uppercase tracking-wide mb-1 block">Supplier Price (¥)</label>
+              <label className="text-xs font-semibold text-slate-600 uppercase tracking-wide mb-1 block">{t("supplierPrice")}</label>
               <input type="number" value={form.supplier_price} onChange={e => set("supplier_price", e.target.value)}
                 placeholder="0.00" step="0.01"
                 className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm text-slate-700 bg-white focus:outline-none focus:border-purple-400" />
@@ -4227,7 +4267,7 @@ function FactoryUpdateForm({ dev, onSave, onCancel }) {
         <div>
           <label className="text-xs font-semibold text-slate-600 uppercase tracking-wide mb-1 block">{t("additionalNotes")}</label>
           <textarea value={form.notes} onChange={e => set("notes", e.target.value)}
-            placeholder="Any additional information…" rows={2}
+            placeholder={globalLang === "zh" ? "任何附加信息…" : "Any additional information…"} rows={2}
             className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm resize-none focus:outline-none focus:border-purple-400" />
         </div>
 
@@ -4236,7 +4276,7 @@ function FactoryUpdateForm({ dev, onSave, onCancel }) {
           <label className="text-xs font-semibold text-slate-600 uppercase tracking-wide mb-1 block">{t("progressPhotos")}</label>
           <label className="flex items-center justify-center h-10 border-2 border-dashed border-slate-200 rounded-xl cursor-pointer hover:border-purple-400 hover:bg-purple-50/50 transition-all">
             <input type="file" accept="image/*" multiple onChange={addImages} className="hidden" />
-            <span className="flex items-center gap-2 text-sm text-slate-500">{Icon.upload} Add photos</span>
+<span className="flex items-center gap-2 text-sm text-slate-500">{Icon.upload} {globalLang === "zh" ? "添加照片" : "Add photos"}</span>
           </label>
           {form.progress_pictures.length > 0 && (
             <div className="grid grid-cols-4 gap-2 mt-2">
@@ -4347,7 +4387,7 @@ function UpdateCard({ update, isSupplier, onEditStep }) {
                           <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
                         </div>
                         <span className="text-xs mr-0.5">{step.icon}</span>
-                        <span className={`text-sm font-medium ${isDone ? "text-green-800 line-through opacity-70" : isOverdue ? "text-red-800" : "text-purple-800"}`}>{step.label}</span>
+                        <span className={`text-sm font-medium ${isDone ? "text-green-800 line-through opacity-70" : isOverdue ? "text-red-800" : "text-purple-800"}`}>{getStepLabel(step.id)}</span>
                         {isDone && <span className="text-xs bg-green-100 text-green-700 px-1.5 py-0.5 rounded-full font-medium">{t("done")}</span>}
                       </div>
                       <div className="flex items-center gap-2">
@@ -4368,7 +4408,7 @@ function UpdateCard({ update, isSupplier, onEditStep }) {
                         {isSupplier && onEditStep && !isDone && (
                           <button onClick={() => onEditStep(update, id, s, true)}
                             className="text-xs text-green-600 hover:text-green-800 px-1.5 py-0.5 rounded hover:bg-green-50 border border-green-200 transition-colors font-medium">
-                            ✓ Done
+                            {t("done")}
                           </button>
                         )}
                       </div>
@@ -4381,13 +4421,13 @@ function UpdateCard({ update, isSupplier, onEditStep }) {
         )}
         {/* Dates + Price */}
         <div className="grid grid-cols-2 gap-3 text-sm">
-          {update.estimated_finish_date && <div><label className="text-xs text-slate-500 uppercase tracking-wide">Est. Finish</label><p className="font-medium text-slate-700 mt-0.5">{fmtDate(update.estimated_finish_date)}</p></div>}
-          {update.supplier_price && <div><label className="text-xs text-slate-500 uppercase tracking-wide">Price</label><p className="font-medium text-slate-700 mt-0.5">¥{update.supplier_price}</p></div>}
+          {update.estimated_finish_date && <div><label className="text-xs text-slate-500 uppercase tracking-wide">{globalLang === "zh" ? "预计完成" : "Est. Finish"}</label><p className="font-medium text-slate-700 mt-0.5">{fmtDate(update.estimated_finish_date)}</p></div>}
+          {update.supplier_price && <div><label className="text-xs text-slate-500 uppercase tracking-wide">{globalLang === "zh" ? "价格" : "Price"}</label><p className="font-medium text-slate-700 mt-0.5">¥{update.supplier_price}</p></div>}
         </div>
         {/* Legacy fields for old updates */}
-        {update.production_status && <div><label className="text-xs text-slate-500 uppercase tracking-wide">Production Status</label><p className="text-sm text-slate-700 mt-0.5">{update.production_status}</p></div>}
-        {update.materials_status && !checkedSteps.length && <div><label className="text-xs text-slate-500 uppercase tracking-wide">Materials</label><p className="text-sm text-slate-700 mt-0.5">{MAT_LABEL[update.materials_status] || update.materials_status}</p></div>}
-        {update.notes && <div><label className="text-xs text-slate-500 uppercase tracking-wide">Notes</label><p className="text-sm text-slate-700 mt-0.5">{update.notes}</p></div>}
+        {update.production_status && <div><label className="text-xs text-slate-500 uppercase tracking-wide">{globalLang === "zh" ? "生产状态" : "Production Status"}</label><p className="text-sm text-slate-700 mt-0.5">{update.production_status}</p></div>}
+        {update.materials_status && !checkedSteps.length && <div><label className="text-xs text-slate-500 uppercase tracking-wide">{globalLang === "zh" ? "材料" : "Materials"}</label><p className="text-sm text-slate-700 mt-0.5">{MAT_LABEL[update.materials_status] || update.materials_status}</p></div>}
+        {update.notes && <div><label className="text-xs text-slate-500 uppercase tracking-wide">{globalLang === "zh" ? "备注" : "Notes"}</label><p className="text-sm text-slate-700 mt-0.5">{update.notes}</p></div>}
         {update.progress_pictures?.length > 0 && (
           <div className="grid grid-cols-4 gap-1.5">
             {update.progress_pictures.map((p, i) => (
@@ -4697,7 +4737,7 @@ function FactoryForm({ fac, onSave, onCancel }) {
           </div>
         )}
       </div>
-      <div><Label>Notes</Label><Textarea value={form.notes} onChange={(e) => set("notes", e.target.value)} placeholder="Additional notes…" rows={2} /></div>
+      <div><Label>{t("notes")}</Label><Textarea value={form.notes} onChange={(e) => set("notes", e.target.value)} placeholder="Additional notes…" rows={2} /></div>
     </FormCard>
   );
 }
